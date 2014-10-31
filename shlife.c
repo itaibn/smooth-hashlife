@@ -71,7 +71,7 @@ unsigned long xmul_cache[256];
 unsigned long ymul_cache[256];
 
 // A cache of the hashes of all leaf nodes.
-unsigned long leaf leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
+unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
 
 // XXX
 int
@@ -83,10 +83,38 @@ init_hash_cache() {
     for (i=0; i<LEAFSIZE; i++) {
         xyhash = yhash;
         for (j=0; j<LEAFSIZE; j++) {
-            point_value[
-            
-    for (i=0; i < 1 << (LEAFSIZE*LEAFSIZE); i++) {
-        
+            point_value[i + LEAFSIZE*j] = xyhash;
+            xyhash = xyhash * xmul % hashprime;
+        }
+        yhash = yhash * ymul % hashprime;
+    }
+
+    int p, tmp;
+    unsigned long hash;
+    for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
+        hash = 0;
+        tmp = p;
+        for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
+            if (tmp & 1) {
+                hash = (hash + 2*point_value[i]) % hashprime;
+            } else {
+                hash = (hash + 1*point_value[i]) % hashprime;
+            }
+        }
+    }
+
+    hash = point_value[LEAFSIZE-1] * xmul % hashprime;
+    for (i=0; i < 256; i++) {
+        xmul_cache[i] = hash;
+        hash = hash * hash % hashprime;
+    }
+
+    hash = point_value[LEAFSIZE*(LEAFSIZE-1)] * ymul % hashprime;
+    for (i=0; i<256; i++) {
+        ymul_cache[i] = hash;
+        hash = hash * hash % hashprime;
+    }
+}
 
 //// BASIC BLOCK CREATION FUNCTIONS
 
