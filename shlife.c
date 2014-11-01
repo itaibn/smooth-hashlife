@@ -432,6 +432,10 @@ display(block *b, FILE *f) {
     }
     */
     size = 2 << b->depth;
+    if (size == 0) {
+        fprintf(stderr, "Overflow error: code doesn't support blocks of this"
+            "size\n");
+    }
 
     long i;
     for (i = 0; i < size; i++) {
