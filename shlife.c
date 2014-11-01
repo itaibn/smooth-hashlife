@@ -435,6 +435,7 @@ display(block *b, FILE *f) {
     if (size == 0) {
         fprintf(stderr, "Overflow error: code doesn't support blocks of this"
             "size\n");
+        return 1;
     }
 
     long i;
