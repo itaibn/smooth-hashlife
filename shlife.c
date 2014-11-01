@@ -73,7 +73,6 @@ unsigned long ymul_cache[256];
 // A cache of the hashes of all leaf nodes.
 unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
 
-// XXX
 int
 init_hash_cache() {
     // Values xmul^i*ymul^j for 0 =< i,j < LEAFSIZE
@@ -84,6 +83,7 @@ init_hash_cache() {
         xyhash = yhash;
         for (j=0; j<LEAFSIZE; j++) {
             point_value[i + LEAFSIZE*j] = xyhash;
+            printf("%d: %lu\n", i + LEAFSIZE*j, xyhash);
             xyhash = xyhash * xmul % hashprime;
         }
         yhash = yhash * ymul % hashprime;
@@ -91,16 +91,23 @@ init_hash_cache() {
 
     int p, tmp;
     unsigned long hash;
+    //printf("%d\n", LEAFSIZE*LEAFSIZE);
     for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
         hash = 0;
         tmp = p;
         for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
+            printf("p %d ", tmp);
             if (tmp & 1) {
                 hash = (hash + 2*point_value[i]) % hashprime;
+                printf("2 %lu\n", hash);
             } else {
                 hash = (hash + 1*point_value[i]) % hashprime;
+                printf("1 %lu\n", hash);
             }
+            tmp = tmp >> 1;
         }
+        printf("f %d %lu\n", i, hash);
+        leaf_hash_cache[p] = hash;
     }
 
     hash = point_value[LEAFSIZE-1] * xmul % hashprime;
@@ -124,7 +131,8 @@ block * new_block(unsigned long hash);
 block *
 mkblock_leaf(leaf l) {
     // Hash function will be changed later
-    unsigned long hash = (l*l*l+94455) % hashprime;
+    //unsigned long hash = (l*l*l+94455) % hashprime;
+    unsigned long hash = leaf_hash_cache[l];
     block *b = new_block(hash);
     b->tag = LEAF_B;
     b->content.b_l = l;
@@ -146,15 +154,25 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     if (ne->depth != d || sw->depth != d || se->depth != d) {
         return NULL;
     }
-    d++;
+    if (d >= 256) {
+        fprintf(stderr, "This implementation currently does not supported sizes"
+            "larger than 2^257\n");
+        return NULL;
+    }
+    //d++;
 
     node n = {nw, ne, sw, se};
     // Hash function will be changed later
-    hash = (nw->hash + 2*ne->hash + 3*sw->hash + 7*se->hash) % hashprime;
+    //hash = (nw->hash + 2*ne->hash + 3*sw->hash + 7*se->hash) % hashprime;
+    unsigned long xmul_d, ymul_d;
+    xmul_d = xmul_cache[d];
+    ymul_d = ymul_cache[d];
+    hash = (nw->hash + xmul_d*ne->hash + ymul_d*sw->hash +
+        xmul_d*ymul_d*se->hash) % hashprime;
     b = new_block(hash);
     b->tag = NODE_B;
     b->content.b_n = n;
-    b->depth = d;
+    b->depth = d+1;
     return b;
 }
 
@@ -484,10 +502,11 @@ unref(block *b) {
 
 main() {
     init_hashtable();
+    init_hash_cache();
     init_result();
     int i;
-    for (i=0; i<0x10000; i++) {
-//        printf("%o\n", result[i]);
+    for (i=0; i<0x10; i++) {
+        printf("%lu\n", leaf_hash_cache[i]);
     }
     block *b;
     b = read_life_105(stdin);
@@ -495,7 +514,9 @@ main() {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
     }
-    display(evolve(b), stdout);
+    //display(evolve(b), stdout);
+    display(b, stdout);
+    printf("%lu\n", b->hash);
     //display(b, stdout);
     exit(0);
 }
