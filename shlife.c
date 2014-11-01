@@ -5,16 +5,6 @@
 
 #include <gmp.h>
 
-#ifdef DEBUG
-#define TRACE(x, ...) fprintf(stderr, x)
-#else
-#define TRACE(x, ...) ;
-#endif
-
-#ifndef DEBUG
-#define DEBUG 0
-#endif
-
 //// DEFINITIONS OF TYPES
 
 struct block_struct;
@@ -56,6 +46,10 @@ struct block_struct {
 // This way simply multiplying the hash by xmul^n*ymul^m "translates" the block
 // by (n, m), which allows calculating the hashes of subblocks more easily.
 
+// WARNING: I am relying on my compiler to correctly handle beyond-32-bit
+// arithmetic. This has already lead to one bug and will probably lead to my
+// downfall in the long term.
+
 // Currently very little thought was put in choosing hashprime, xmul, & ymul.
 // hashprime was chosen as a large prime that fits in 32 bits, and xmul & ymul
 // were chosen so as not to have any obvious linear relationships which might
@@ -82,8 +76,8 @@ init_hash_cache() {
     for (i=0; i<LEAFSIZE; i++) {
         xyhash = yhash;
         for (j=0; j<LEAFSIZE; j++) {
-            point_value[i + LEAFSIZE*j] = xyhash;
-            printf("%d: %lu\n", i + LEAFSIZE*j, xyhash);
+            printf("%d: %lu\n", i*LEAFSIZE + j, xyhash);
+            point_value[i*LEAFSIZE + j] = xyhash;
             xyhash = xyhash * xmul % hashprime;
         }
         yhash = yhash * ymul % hashprime;
@@ -91,32 +85,29 @@ init_hash_cache() {
 
     int p, tmp;
     unsigned long hash;
-    //printf("%d\n", LEAFSIZE*LEAFSIZE);
     for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
         hash = 0;
         tmp = p;
         for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
-            printf("p %d ", tmp);
             if (tmp & 1) {
                 hash = (hash + 2*point_value[i]) % hashprime;
-                printf("2 %lu\n", hash);
             } else {
                 hash = (hash + 1*point_value[i]) % hashprime;
-                printf("1 %lu\n", hash);
             }
             tmp = tmp >> 1;
         }
-        printf("f %d %lu\n", i, hash);
         leaf_hash_cache[p] = hash;
     }
 
     hash = point_value[LEAFSIZE-1] * xmul % hashprime;
+    printf("x: %lu\n", hash);
     for (i=0; i < 256; i++) {
         xmul_cache[i] = hash;
         hash = hash * hash % hashprime;
     }
 
     hash = point_value[LEAFSIZE*(LEAFSIZE-1)] * ymul % hashprime;
+    printf("y: %lu\n", hash);
     for (i=0; i<256; i++) {
         ymul_cache[i] = hash;
         hash = hash * hash % hashprime;
@@ -164,11 +155,12 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     node n = {nw, ne, sw, se};
     // Hash function will be changed later
     //hash = (nw->hash + 2*ne->hash + 3*sw->hash + 7*se->hash) % hashprime;
-    unsigned long xmul_d, ymul_d;
+    unsigned long xmul_d, ymul_d, xymul_d;
     xmul_d = xmul_cache[d];
     ymul_d = ymul_cache[d];
+    xymul_d = xmul_d * ymul_d % hashprime;
     hash = (nw->hash + xmul_d*ne->hash + ymul_d*sw->hash +
-        xmul_d*ymul_d*se->hash) % hashprime;
+        xymul_d*se->hash) % hashprime;
     b = new_block(hash);
     b->tag = NODE_B;
     b->content.b_n = n;
@@ -200,7 +192,6 @@ init_result() {
         } else {
             res = bitcnt == 3;
         }
-        //printf("%3x:%d\n", pos, res);
         if (res) {
             result33[pos] = 1;
         } else {
@@ -218,7 +209,6 @@ init_result() {
 // Sorry, the code here is a bit messy and repetitive.
 block *
 evolve(block *x) {
-    TRACE(stderr, "evolve() on depth %d\n", x->depth);
     block *r;
     if (x == NULL) {
         fprintf(stderr, "NULL input to evolve()\n");
@@ -242,7 +232,6 @@ evolve(block *x) {
                        (n.se->content.b_l & 3) << 10 |
                        (n.sw->content.b_l & 12) << 10 |
                        (n.se->content.b_l & 12) << 12;
-        TRACE("Unpacked: %x\n", unpack_x);
         r = mkblock_leaf(result[unpack_x]);
     } else {
         // Half-sized subblocks of x on the north, south, east, west, and
@@ -347,9 +336,6 @@ read_life_105(FILE *f) {
 // Used in read_life_105. Returns NULL when (x,y) is out of range.
 block *
 write_bit(block *b, unsigned long y, unsigned long x, char bit) {
-    //TRACE("Writing %d at (%u, %u)\n", bit, x, y);
-    if (DEBUG) fprintf(stderr ,"Writing %d at (%u, %u)\n", bit, x, y);
-
     unsigned long size = 2;
     /*
     block *tmp = b;
@@ -360,7 +346,6 @@ write_bit(block *b, unsigned long y, unsigned long x, char bit) {
     }
     */
     size = 2 << b->depth;
-    TRACE("Block size: %d\n", size);
 
     if (x >= size) {
         //return -1;
@@ -396,7 +381,7 @@ write_bit(block *b, unsigned long y, unsigned long x, char bit) {
             return mkblock_node(n.nw, n.ne, n.sw, n.se);
         }
     } else {
-        TRACE("No code for writing in a block neither leaf nor node");
+        fprintf(stderr, "No code for writing in a block neither leaf nor node");
         return NULL;
     }
 }
@@ -415,7 +400,6 @@ print_line(block *b, long y, FILE *f) {
     size = 2 << b->depth;
 
     if (b->tag == LEAF_B) {
-        TRACE("Leaf value %x\n", b->content.b_l);
         int out = 0xf & b->content.b_l >> (2*y);
         int j;
         for (j = 0; j<2; j++) {
@@ -475,7 +459,6 @@ new_block(unsigned long hash) {
         i = ii % ht_size;
         b = hashtable[i];
         if (b == NULL) {
-            TRACE("New block hash: %ld\n", hash);
             b = (block *) malloc(sizeof(block));
             b->hash = hash;
             b->res = NULL;
@@ -505,8 +488,8 @@ main() {
     init_hash_cache();
     init_result();
     int i;
-    for (i=0; i<0x10; i++) {
-        printf("%lu\n", leaf_hash_cache[i]);
+    for (i=0; i<256; i++) {
+//        printf("x[%d]: %lu\ny[%d]: %lu\n", i, xmul_cache[i], i, ymul_cache[i]);
     }
     block *b;
     b = read_life_105(stdin);
