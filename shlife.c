@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// I'm planning on using bignums for coordinates to allow sizes >2^64. Currently
+// this import doesn't have any use except for an almost-pointless use of
+// mp_bitcnt_t in the definition of 'block'.
 #include <gmp.h>
 
 //// DEFINITIONS OF TYPES
@@ -46,15 +49,14 @@ struct block_struct {
 // This way simply multiplying the hash by xmul^n*ymul^m "translates" the block
 // by (n, m), which allows calculating the hashes of subblocks more easily.
 
-// WARNING: I am relying on my compiler to correctly handle beyond-32-bit
-// arithmetic. This has already lead to one bug and will probably lead to my
-// downfall in the long term.
-
 // Currently very little thought was put in choosing hashprime, xmul, & ymul.
 // hashprime was chosen as a large prime that fits in 32 bits, and xmul & ymul
 // were chosen so as not to have any obvious linear relationships which might
 // cause collisions. It would be good to have that both xmul and ymul are
 // primitive roots but this hasn't been checked.
+
+// Note: hashprime must be less than 2^31 for code to work. See comments in
+// mkblock_node.
 const unsigned long hashprime = 1000000007;
 const unsigned long xmul = 2331, ymul = 121212121;
 
@@ -153,14 +155,15 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     //d++;
 
     node n = {nw, ne, sw, se};
-    // Hash function will be changed later
-    //hash = (nw->hash + 2*ne->hash + 3*sw->hash + 7*se->hash) % hashprime;
-    unsigned long xmul_d, ymul_d, xymul_d;
+    // Calculate the hash function
+    uint64_t xmul_d, ymul_d, xymul_d, nwh, neh, swh, seh;
+    nwh = nw->hash; neh = ne->hash; swh = sw->hash; seh = se->hash;
     xmul_d = xmul_cache[d];
     ymul_d = ymul_cache[d];
     xymul_d = xmul_d * ymul_d % hashprime;
-    hash = (nw->hash + xmul_d*ne->hash + ymul_d*sw->hash +
-        xymul_d*se->hash) % hashprime;
+    // Since hashprime is less than 2^31, all the terms in the sum are less than
+    // 2^62, guaranteeing that there is no overflow.
+    hash = (nwh + xmul_d*neh + ymul_d*swh + xymul_d*seh) % hashprime;
     b = new_block(hash);
     b->tag = NODE_B;
     b->content.b_n = n;
