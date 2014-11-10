@@ -16,6 +16,16 @@ typedef struct block_struct block;
 // Leaf node for 4x4^H^H^H2x2 block (let's worry about efficiency later).
 // Don't change this macro; this value is hardcoded in other places.
 #define LEAFSIZE 2
+/*
+Data format is little-endian going west-to-east, north-to-south, like so:
+   N
+
+  0 1
+W     E
+  2 3
+
+   S
+*/
 typedef uint8_t leaf;
 
 // A node block recursively containing 4 smaller blocks.
@@ -23,18 +33,24 @@ typedef struct {
     block *nw, *ne, *sw, *se;
 } node;
 
+typedef struct {
+    mpz_t x, y/*, t*/;
+    block *superblock;
+} subblock;
+
 // General block. May be a leaf or node.
 // To be defined: subblocks of bigger blocks.
 struct block_struct {
     enum b_tag {
-        EMPTY, // For uninitialized block entries in the hash table.
+        //EMPTY, // For uninitialized block entries in the hash table.
         LEAF_B,
-        NODE_B
-        // , CONTAIN_B
+        NODE_B,
+        CONTAIN_B
     } tag;
     union {
         leaf b_l;
         node b_n;
+        subblock b_c;
     } content;
     unsigned long hash;
     mp_bitcnt_t depth;
@@ -55,7 +71,7 @@ struct block_struct {
 // cause collisions. It would be good to have that both xmul and ymul are
 // primitive roots but this hasn't been checked.
 
-// Note: hashprime must be less than 2^31 for code to work. See comments in
+// Note: hashprime must be less than 2^31 for code to work. See comment in
 // mkblock_node.
 const unsigned long hashprime = 1000000007;
 const unsigned long xmul = 2331, ymul = 121212121;
@@ -68,6 +84,8 @@ unsigned long ymul_cache[256];
 
 // A cache of the hashes of all leaf nodes.
 unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
+
+unsigned long *rectangle_hash_cache[(LEAFSIZE-1)*(LEAFSIZE-1)]
 
 int
 init_hash_cache() {
@@ -116,6 +134,76 @@ init_hash_cache() {
     }
 }
 
+/*
+// Meaning of corner: 0->nw; 1->sw; 2->ne; 3->se;
+unsigned long
+corner_hash(block *base, mpz_t x, mpz_t y, int corner) {
+    if (base->depth == 0) {
+        // ???
+    }
+
+    if (base->tag == CONTAIN_B) {
+        fprintf(stderr, "no support for contain type blocks in"
+            "'corner_hash'\n");
+        return hashprime;
+    }
+
+    node n = base->content.b_n
+    block *ii, *io, *oi, *oo;
+
+    switch (corner) {
+        case 0:
+            ii = n.nw; io = n.ne; oi = n.sw; oo = n.se;
+            break;
+        case 1:
+            ii = n.sw; io = n.se; oi = n.nw; oo = n.ne;
+            break;
+        case 2:
+            ii = n.ne; io = n.nw; oi = n.se; oo = n.sw;
+            break;
+        case 3:
+            ii = n.se; io = n.sw; oi = n.ne; oo = n.nw;
+            break;
+        default:
+            fprintf(stderr, "Invalid parameter corner to 'corner_hash': %d\n",
+                corner);
+            return hashprime;
+    }
+
+    mpz_t halfblock;
+    int cmp0, cmp1;
+    mpz_init_set_ui(halfblock, LEAFSIZE);
+    mpz_mul_2exp(halfblock, halfblock, b->depth - 1);
+    cmp0 = 
+*/
+
+// Compute the hash of a rectangular subblock with northwest corner (x0, y0) and
+// southeast corner (x1, y1).
+// XXX UNFINISHED
+unsigned long
+hash_rectangle(block *base, mpz_t x0, mpz_t x1, mpz_t y0, mpz_t y1) {
+    assert (mpz_cmp(x0, x1) =< 0 && mpz_cmp(y0, y1) =< 0)
+
+    mpz_t blocksize;
+    mpz_init_set_ui(blocksize, LEAFSIZE);
+    mpz_mul_2exp(blocksize, blocksize, b->depth);
+    
+    assert (mpz_sgn(x0) >= 0 && mpz_cmp(x1, blocksize) =< 0
+        && mpz_sgn(y0) >= 0 && mpz_cmp(y1, blocksize) =< 0);
+    if (mpz_cmp(x0, x1) == 0 || mpz_cmp(y0, y1) == 0) {
+        return 0;
+    }
+    if (mpz_sgn(x0) == 0 && mpz_cmp(x1, blocksize) == 0 && mpz_sgn(y0) == 0 &&
+        mpz_cmp(y1, blocksize) == 0) {
+        return b->hash;
+    }
+
+    mpz_t halfblock;
+    mpz_init(halfblock);
+    mpz_tdiv_q_2exp(halfblock, blocksize, 1);
+
+    unsigned long hnw, hne, hsw, hse;
+
 //// BASIC BLOCK CREATION FUNCTIONS
 
 // Allocate a block with a given hash from the hash table
@@ -128,7 +216,7 @@ mkblock_leaf(leaf l) {
     unsigned long hash = leaf_hash_cache[l];
     block *b = new_block(hash);
     b->tag = LEAF_B;
-    b->content.b_l = l;
+    b->content.b_l = l
     b->depth = 0;
     return b;
 }
@@ -334,6 +422,39 @@ read_life_105(FILE *f) {
         }
         c = fgetc(f);
     }
+}
+
+block *
+read_mc(FILE *f) {
+    return NULL; // Screw this. I should probably only start working on reading
+                 // .mc files after I have the hash-table code to support it.
+
+    char c;
+
+    // Read first line: "[M2] ..."
+    while ((c = getc(f)) != '\n') {
+        if (c == EOF) {
+            return NULL;
+        }
+    } 
+
+    block *blank_eight, **blocktable;
+    blank_eight = mkleaf_block(0);
+    blank_eight = mknode_block(blank_eight, blank_eight, blank_eight,
+        blank_eight);
+    blank_eight = mknode_block(blank_eight, blank_eight, blank_eight,
+        blank_eight);
+    if (LEAFSIZE != 2)
+        {fprintf(stderr, "read_mc() needs LEAFSIZE=2\n"); return NULL;}
+    blocktable 
+
+    while(1) {
+        c = getc(f);
+        if (c == '$' || c == '*' || c == '.') {
+            int x=0, y=0;
+            while (c != '\n') {
+                switch(c) {
+                    case '
 }
 
 // Used in read_life_105. Returns NULL when (x,y) is out of range.
