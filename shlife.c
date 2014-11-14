@@ -91,6 +91,7 @@ struct block_struct {
 // Note: hashprime must be less than 2^31 for code to work. See comment in
 // mkblock_node.
 const unsigned long hashprime = 1000000007;
+mpz_t hashprime_mpz;
 const unsigned long xmul = 2331, ymul = 121212121;
 
 // {x,y}mul_cache[i] caches the value {xmul,ymul}^(LEAFSIZE*2^i), and is used
@@ -112,6 +113,9 @@ init_hash_cache() {
     int i, x, y, hash;
     int p, tmp;
     unsigned long yhash, xyhash;
+
+    mpz_init_set_ui(hashprime_mpz, hashprime);
+
     yhash = 1;
     for (x=0; x<LEAFSIZE; x++) {
         xyhash = yhash;
@@ -122,6 +126,7 @@ init_hash_cache() {
         }
         yhash = yhash * ymul % hashprime;
     }
+
     for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
         hash = 0;
         tmp = p;
@@ -186,55 +191,12 @@ hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
     return (hnw + xmul_d*hne + ymul_d*hsw + xymul_d*hse) % hashprime;
 }
 
-/*
-// Meaning of corner: 0->nw; 1->sw; 2->ne; 3->se;
-unsigned long
-corner_hash(block *base, mpz_t x, mpz_t y, int corner) {
-    if (base->depth == 0) {
-        // ???
-    }
-
-    if (base->tag == CONTAIN_B) {
-        fprintf(stderr, "no support for contain type blocks in"
-            "'corner_hash'\n");
-        return hashprime;
-    }
-
-    node n = base->content.b_n
-    block *ii, *io, *oi, *oo;
-
-    switch (corner) {
-        case 0:
-            ii = n.nw; io = n.ne; oi = n.sw; oo = n.se;
-            break;
-        case 1:
-            ii = n.sw; io = n.se; oi = n.nw; oo = n.ne;
-            break;
-        case 2:
-            ii = n.ne; io = n.nw; oi = n.se; oo = n.sw;
-            break;
-        case 3:
-            ii = n.se; io = n.sw; oi = n.ne; oo = n.nw;
-            break;
-        default:
-            fprintf(stderr, "Invalid parameter corner to 'corner_hash': %d\n",
-                corner);
-            return hashprime;
-    }
-
-    mpz_t halfblock;
-    int cmp0, cmp1;
-    mpz_init_set_ui(halfblock, LEAFSIZE);
-    mpz_mul_2exp(halfblock, halfblock, b->depth - 1);
-    cmp0 = 
-*/
-
 // Compute the hash of a rectangular subblock with northwest corner (x0, y0) and
-// southeast corner (x1, y1). The rectangle is truncated if 
-// XXX UNFINISHED
+// southeast corner (x1, y1). The rectangle is truncated if either (x0, y0) or
+// (x1, y1) extend past the ends of base.`
 unsigned long
 hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
-        const mpz_t iy1) {
+        const mpz_t iy1, int adjust) {
     //assert (mpz_cmp(ix0, ix1) =< 0 && mpz_cmp(iy0, y1) =< 0)
 
     unsigned long hash;
@@ -261,7 +223,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     if (base->tag == LEAF_B) {
         unsigned long x0l, x1l, y0l, y1l;
         unsigned long *table;
-        leaf xmask, pos;
+        leaf xmask, mask, pos, row, rect;
         int i;
         x0l = mpz_get_ui(x0);
         x1l = mpz_get_ui(x1);
@@ -271,17 +233,20 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         //    * rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)]
         //    % hashprime;
         table = rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)];
-        xmask = (1 << (x1l - x0l) - 1) << x0l;
-        pos = 0;
+        pos = base->content.b_l;
+        rect = 0;
+        xmask = ((1 << (x1l - x0l)) - 1) << x0l;
         for (i = y0l; i < y1l; i++) {
-            pos |= xmask << ((x1l-x0l)*i);
+            mask = xmask << (i*LEAFSIZE);
+            row = (pos & mask) >> (i*LEAFSIZE);
+            rect |= row << (i*(x1l-x0l));
         }
-        hash = table[hash];
+        hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect];
         goto end;
     } else if (base->tag != NODE_B) {
         fprintf(stderr, "CONTAIN_B not supported as input to hash_rectangle()");
     }
-        
+
     node n = base->content.b_n;
     unsigned long hnw, hne, hsw, hse; 
     mpz_t halfblock;
@@ -293,53 +258,30 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     mpz_sub(shiftx1, x1, halfblock);
     mpz_sub(shifty0, y0, halfblock);
     mpz_sub(shifty1, y1, halfblock);
-    hnw = hash_rectangle(n.nw, x0, x1, y0, y1);
-    hne = hash_rectangle(n.ne, shiftx0, shiftx1, y0, y1);
-    hsw = hash_rectangle(n.sw, x0, x1, shifty0, shifty1);
-    hse = hash_rectangle(n.se, shiftx0, shiftx1, shifty0, shifty1);
+    hnw = hash_rectangle(n.nw, x0, x1, y0, y1, 0);
+    hne = hash_rectangle(n.ne, shiftx0, shiftx1, y0, y1, 0);
+    hsw = hash_rectangle(n.sw, x0, x1, shifty0, shifty1, 0);
+    hse = hash_rectangle(n.se, shiftx0, shiftx1, shifty0, shifty1, 0);
     
     hash = hash_node(hnw, hne, hsw, hse, base->depth-1);
     mpz_clears(halfblock, shiftx0, shiftx1, shifty0, shifty1, NULL);
 end:
+    if (adjust) {
+        mpz_t x_adj, y_adj;
+        uint64_t xy_adj;
+        //mpz_init(pow);
+        mpz_init_set_ui(x_adj, xmul);
+        mpz_neg(x0, x0);
+        mpz_powm(x_adj, x_adj, x0, hashprime_mpz);
+        mpz_init_set_ui(y_adj, ymul);
+        mpz_neg(y0, y0);
+        mpz_powm(y_adj, y_adj, y0, hashprime_mpz);
+        xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
+        hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
+        mpz_clears(x_adj, y_adj, NULL);
+    }
     mpz_clears(blocksize, zero, x0, x1, y0, y1, NULL);
     return hash;
-
-    /*
-    mpz_t tmpx0, tmpx1, tmpy0, tmpy1;
-    mpz_init(halfblock);
-    mpz_init(tmpx0); mpz_init(tmpx1); mpz_init(tmpy0); mpz_init(tmpy1);
-    mpz_tdiv_q_2exp(halfblock, blocksize, 1);
-
-    if (mpz_cmp(x0, halfblock) < 0 && mpz_cmp(y0, halfblock) < 0) {
-        my_mpz_min(tmpx, x1, halfblock);
-        my_mpz_min(tmpy, y1, halfblock);
-        hnw = hash_rectangle(n.nw, x0, tmpx, y0, tmpy);
-    } else {
-        hnw = 0;
-    }
-    // Copy & Paste code *Sigh*
-    if (mpz_cmp(x1, halfblock) > 0 && mpz_cmp(y0, halfblock) < 0) {
-        my_mpz_max(tmpx, x0, halfblock);
-        my_mpz_min(tmpy, y1, halfblock);
-        hne = hash_rectangle(n.ne, tmpx, x1, y0, tmpy);
-    } else {
-        hnw = 0;
-    }
-    if (mpz_cmp(x0, halfblock) < 0 && mpz_cmp(y1, halfblock) > 0) {
-        my_mpz_min(tmpx, x1, halfblock);
-        my_mpz_max(tmpy, y0, halfblock);
-        hsw = hash_rectangle(n.
-    } else {
-        hnw = 0;
-    }
-    if (mpz_cmp(x1, halfblock) > 0 && mpz_cmp(y1, halfblock) > 0) {
-        my_mpz_max(tmpx, x0, halfblock);
-        my_mpz_max(tmpy, y0, halfblock);
-        hnw = hash_rectangle(n.nw, x0, tmpx, y0, tmpy);
-    } else {
-        hnw = 0;
-    }
-    */
 }
 
 //// BASIC BLOCK CREATION FUNCTIONS
