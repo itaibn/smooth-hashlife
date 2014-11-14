@@ -193,7 +193,8 @@ hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
 
 // Compute the hash of a rectangular subblock with northwest corner (x0, y0) and
 // southeast corner (x1, y1). The rectangle is truncated if either (x0, y0) or
-// (x1, y1) extend past the ends of base.`
+// (x1, y1) extend past the ends of base. If the parameter 'adjust' is set
+// nonzero, the hash is calculated as if (x0, y0) is the origin.
 unsigned long
 hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         const mpz_t iy1, int adjust) {
