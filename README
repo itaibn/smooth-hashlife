@@ -1,0 +1,8 @@
+Smooth hashlife is an attempt to improve the hashlife algorithm for cellular
+automata to take full advantage of translational symmetry. I try to describe the
+idea here:
+
+https://itaibn.wordpress.com/2014/09/10/an-idea-for-improving-hashlife/
+
+Currently the code only implements ordinary hashlife, but without any garbage
+collection nor hash table resizing.
