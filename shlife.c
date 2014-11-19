@@ -104,24 +104,23 @@ unsigned long ymul_cache[256];
 unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
 // A set of caches for hashes of rectangular subblocks of leaf nodes of all
 // sizes.
-unsigned long *rectangle_hash_cache[(LEAFSIZE-1)*(LEAFSIZE-1)];
+unsigned long *rectangle_hash_cache[LEAFSIZE * LEAFSIZE];
 // Values xmul^i*ymul^j for 0 =< i,j < LEAFSIZE
 unsigned long point_hash_value[LEAFSIZE * LEAFSIZE];
 
 int
 init_hash_cache() {
-    int i, x, y, hash;
+    int i, j, x, y, hash;
     int p, tmp;
     unsigned long yhash, xyhash;
 
     mpz_init_set_ui(hashprime_mpz, hashprime);
 
     yhash = 1;
-    for (x=0; x<LEAFSIZE; x++) {
+    for (y=0; y<LEAFSIZE; y++) {
         xyhash = yhash;
-        for (y=0; y<LEAFSIZE; y++) {
-            printf("%d: %lu\n", x*LEAFSIZE + y, xyhash);
-            point_hash_value[x*LEAFSIZE + y] = xyhash;
+        for (x=0; x<LEAFSIZE; x++) {
+            point_hash_value[y*LEAFSIZE + x] = xyhash;
             xyhash = xyhash * xmul % hashprime;
         }
         yhash = yhash * ymul % hashprime;
@@ -129,49 +128,47 @@ init_hash_cache() {
 
     for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
         hash = 0;
-        tmp = p;
         for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
-            if (tmp & 1) {
+            if (p & (1 << i)) {
                 hash = (hash + 2*point_hash_value[i]) % hashprime;
             } else {
                 hash = (hash + 1*point_hash_value[i]) % hashprime;
             }
-            tmp = tmp >> 1;
         }
         leaf_hash_cache[p] = hash;
     }
 
     int size;
-    unsigned long *table;
-    for (x=1; x<LEAFSIZE; x++) {
-    for (y=1; y<LEAFSIZE; y++) {
+    unsigned long *table, point_value;
+    for (x=1; x<=LEAFSIZE; x++) {
+    for (y=1; y<=LEAFSIZE; y++) {
         size = 1 << (x*y);
         table = (unsigned long *) malloc(size * sizeof(unsigned long));
-        for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
+        for (p=0; p < size; p++) {
             hash = 0;
-            tmp = p;
-            for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
-                if (tmp & 1) {
-                    hash = (hash + 2*point_hash_value[i]) % hashprime;
+            for (i=0; i<x; i++) {
+            for (j=0; j<y; j++) {
+                point_value = point_hash_value[i + LEAFSIZE*j];
+                if (p & (1 << (i+x*j))) {
+                    hash = (hash + 2*point_value) % hashprime;
                 } else {
-                    hash = (hash + 1*point_hash_value[i]) % hashprime;
+                    hash = (hash + 1*point_value) % hashprime;
                 }
                 tmp = tmp >> 1;
-            }
+            }}
+            table[p] = hash;
         }
-        rectangle_hash_cache[(x-1) + (LEAFSIZE-1)*(y-1)] = table;
+        rectangle_hash_cache[(x-1) + LEAFSIZE*(y-1)] = table;
     }
     }
 
     hash = point_hash_value[LEAFSIZE-1] * xmul % hashprime;
-    printf("x: %lu\n", hash);
     for (i=0; i < 256; i++) {
         xmul_cache[i] = hash;
         hash = hash * hash % hashprime;
     }
 
     hash = point_hash_value[LEAFSIZE*(LEAFSIZE-1)] * ymul % hashprime;
-    printf("y: %lu\n", hash);
     for (i=0; i<256; i++) {
         ymul_cache[i] = hash;
         hash = hash * hash % hashprime;
@@ -206,6 +203,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     mpz_init_set_ui(zero, 0);
     mpz_init_set_ui(blocksize, LEAFSIZE);
     mpz_mul_2exp(blocksize, blocksize, base->depth);
+    mpz_inits(x0, x1, y0, y1, NULL);
     my_mpz_max(x0, ix0, zero);
     my_mpz_max(y0, iy0, zero);
     my_mpz_min(x1, ix1, blocksize);
@@ -213,7 +211,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     //assert (mpz_sgn(x0) >= 0 && mpz_cmp(x1, blocksize) =< 0
     //    && mpz_sgn(y0) >= 0 && mpz_cmp(y1, blocksize) =< 0);
     
-    if (mpz_cmp(x0, x1) <= 0 || mpz_cmp(y0, y1) <= 0) {
+    if (mpz_cmp(x0, x1) >= 0 || mpz_cmp(y0, y1) >= 0) {
         return 0;
     }
     if (mpz_sgn(x0) == 0 && mpz_cmp(x1, blocksize) == 0 && mpz_sgn(y0) == 0 &&
@@ -221,6 +219,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         return base->hash;
     }
 
+    printf("t %d\n", base->tag);
     if (base->tag == LEAF_B) {
         unsigned long x0l, x1l, y0l, y1l;
         unsigned long *table;
@@ -233,16 +232,24 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         //hash = point_hash_value[x0l + LEAFSIZE*y0l]
         //    * rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)]
         //    % hashprime;
-        table = rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)];
+        printf("Looking up table...\n");
+        i = (x1l-x0l-1) + LEAFSIZE*(y1l-y0l-1);
+        assert (0 <= i && i < LEAFSIZE*LEAFSIZE);
+        table = rectangle_hash_cache[i];
+        printf("Done looking up table...\n");
         pos = base->content.b_l;
         rect = 0;
         xmask = ((1 << (x1l - x0l)) - 1) << x0l;
         for (i = y0l; i < y1l; i++) {
             mask = xmask << (i*LEAFSIZE);
-            row = (pos & mask) >> (i*LEAFSIZE);
+            row = (pos & mask) >> (i*LEAFSIZE+y0l);
             rect |= row << (i*(x1l-x0l));
         }
+        printf("r %o\n", rect);
+        assert(rect < 1<<((x1l-x0l)*(y1l-y0l)));
+        printf("Looking up table (2.0)...\n");
         hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect];
+        printf("Done looking up table (2.0)...\n");
         goto end;
     } else if (base->tag != NODE_B) {
         fprintf(stderr, "CONTAIN_B not supported as input to hash_rectangle()");
@@ -266,6 +273,8 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     
     hash = hash_node(hnw, hne, hsw, hse, base->depth-1);
     mpz_clears(halfblock, shiftx0, shiftx1, shifty0, shifty1, NULL);
+    printf("[nw: %lu; ne: %lu; sw: %lu; se: %lu]\n-> %lu\n", hnw, hne, hsw, hse,
+        hash);
 end:
     if (adjust) {
         mpz_t x_adj, y_adj;
@@ -279,6 +288,7 @@ end:
         mpz_powm(y_adj, y_adj, y0, hashprime_mpz);
         xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
         hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
+        printf("A %lu %lu\n", xy_adj, hash);
         mpz_clears(x_adj, y_adj, NULL);
     }
     mpz_clears(blocksize, zero, x0, x1, y0, y1, NULL);
@@ -698,23 +708,45 @@ unref(block *b) {
 
 //// MAIN
 
-main() {
+main(int argc, char **argv) {
     init_hashtable();
     init_hash_cache();
     init_result();
-    int i;
-    for (i=0; i<256; i++) {
-//        printf("x[%d]: %lu\ny[%d]: %lu\n", i, xmul_cache[i], i, ymul_cache[i]);
+
+    if (argc != 6) {
+        fprintf(stderr, "shlife pattern x0 x1 y0 y1\n");
+        exit(1);
     }
+
+    FILE *f;
     block *b;
-    b = read_life_105(stdin);
+    f = fopen(argv[1], "r");
+    if (f == NULL) {
+        fprintf(stderr, "Error opening file\n");
+        exit(1);
+    }
+    b = read_life_105(f);
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
     }
+    fclose(f);
+
+    mpz_t x[4];
+    int i, err=0;
+    for (i=0; i<4; i++) {
+        err |= mpz_init_set_str(x[i], argv[i+2], 10);
+    }
+    if (err) {
+        fprintf(stderr, "Arguments x0, x1, y0, y1 must be numbers\n");
+        exit(1);
+    }
+
     //display(evolve(b), stdout);
     display(b, stdout);
+    if (b->tag == NODE_B) display(b->content.b_n.nw, stdout);
     printf("%lu\n", b->hash);
+    printf("%lu\n", hash_rectangle(b, x[0], x[1], x[2], x[3], 1));
     //display(b, stdout);
     exit(0);
 }
