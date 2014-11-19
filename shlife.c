@@ -219,7 +219,6 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         return base->hash;
     }
 
-    printf("t %d\n", base->tag);
     if (base->tag == LEAF_B) {
         unsigned long x0l, x1l, y0l, y1l;
         unsigned long *table;
@@ -232,11 +231,9 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         //hash = point_hash_value[x0l + LEAFSIZE*y0l]
         //    * rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)]
         //    % hashprime;
-        printf("Looking up table...\n");
         i = (x1l-x0l-1) + LEAFSIZE*(y1l-y0l-1);
         assert (0 <= i && i < LEAFSIZE*LEAFSIZE);
         table = rectangle_hash_cache[i];
-        printf("Done looking up table...\n");
         pos = base->content.b_l;
         rect = 0;
         xmask = ((1 << (x1l - x0l)) - 1) << x0l;
@@ -245,11 +242,8 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
             row = (pos & mask) >> (i*LEAFSIZE+y0l);
             rect |= row << (i*(x1l-x0l));
         }
-        printf("r %o\n", rect);
         assert(rect < 1<<((x1l-x0l)*(y1l-y0l)));
-        printf("Looking up table (2.0)...\n");
         hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect];
-        printf("Done looking up table (2.0)...\n");
         goto end;
     } else if (base->tag != NODE_B) {
         fprintf(stderr, "CONTAIN_B not supported as input to hash_rectangle()");
@@ -273,8 +267,6 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     
     hash = hash_node(hnw, hne, hsw, hse, base->depth-1);
     mpz_clears(halfblock, shiftx0, shiftx1, shifty0, shifty1, NULL);
-    printf("[nw: %lu; ne: %lu; sw: %lu; se: %lu]\n-> %lu\n", hnw, hne, hsw, hse,
-        hash);
 end:
     if (adjust) {
         mpz_t x_adj, y_adj;
@@ -288,7 +280,6 @@ end:
         mpz_powm(y_adj, y_adj, y0, hashprime_mpz);
         xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
         hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
-        printf("A %lu %lu\n", xy_adj, hash);
         mpz_clears(x_adj, y_adj, NULL);
     }
     mpz_clears(blocksize, zero, x0, x1, y0, y1, NULL);
@@ -744,9 +735,8 @@ main(int argc, char **argv) {
 
     //display(evolve(b), stdout);
     display(b, stdout);
-    if (b->tag == NODE_B) display(b->content.b_n.nw, stdout);
+    //if (b->tag == NODE_B) display(b->content.b_n.nw, stdout);
     printf("%lu\n", b->hash);
     printf("%lu\n", hash_rectangle(b, x[0], x[1], x[2], x[3], 1));
-    //display(b, stdout);
     exit(0);
 }
