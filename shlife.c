@@ -698,6 +698,7 @@ block **hashtable;
 void
 init_hashtable() {
     hashtable = (block **) malloc(ht_size * sizeof(block *));
+    memset(hashtable, 0, ht_size * sizeof(block *));
 }
 
 block *
