@@ -59,7 +59,7 @@ typedef struct {
 // To be defined: subblocks of bigger blocks.
 struct block_struct {
     enum b_tag {
-        //EMPTY, // For uninitialized block entries in the hash table.
+        EMPTY = 0, // For uninitialized block entries in the hash table.
         LEAF_B,
         NODE_B,
         CONTAIN_B
@@ -297,6 +297,7 @@ mkblock_leaf(leaf l) {
     //unsigned long hash = (l*l*l+94455) % hashprime;
     unsigned long hash = leaf_hash_cache[l];
     block *b = new_block(hash);
+    if (b->tag != EMPTY) {return b;}
     b->tag = LEAF_B;
     b->content.b_l = l;
     b->depth = 0;
@@ -339,9 +340,43 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     */
     hash = hash_node(nw->hash, ne->hash, sw->hash, se->hash, d);
     b = new_block(hash);
+    if (b->tag != EMPTY) {return b;}
     b->tag = NODE_B;
     b->content.b_n = n;
     b->depth = d+1;
+    return b;
+}
+
+block *
+mkblock_contain(block *superblock, mpz_t x, mpz_t y) {
+    mp_bitcnt_t d;
+    unsigned long hash;
+    mpz_t size, x_east, y_south;
+    block *b;
+
+    d = superblock->depth-1;
+    assert(d >= 0);
+    mpz_init_set_ui(size, LEAFSIZE);
+    mpz_mul_2exp(size, size, d);
+    mpz_init(x_east);
+    mpz_add(x_east, x, size);
+    mpz_init(y_south);
+    mpz_add(y_south, y, size);
+
+    assert(mpz_sgn(x) >= 0 && mpz_cmp(x_east, size) <= 0 &&
+        mpz_sgn(y) >= 0 && mpz_cmp(y_south, size) <= 0
+        && superblock);
+
+    hash = hash_rectangle(superblock, x, x_east, y, y_south, 1);
+
+    b = new_block(hash);
+    if (b->tag != EMPTY) {return b;}
+    b->tag = CONTAIN_B;
+    b->depth = d;
+    b->content.b_c.superblock = superblock;
+    mpz_init_set(b->content.b_c.x, x);
+    mpz_init_set(b->content.b_c.y, y);
+    // ... b->content.b_c.t ...
     return b;
 }
 
@@ -678,6 +713,7 @@ new_block(unsigned long hash) {
             b = (block *) malloc(sizeof(block));
             b->hash = hash;
             b->res = NULL;
+            b->tag = EMPTY;
 //            b->refcount = 0;
             // Insert command here of the form:
             //  num_entries++;
