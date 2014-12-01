@@ -50,6 +50,11 @@ typedef struct {
     block *nw, *ne, *sw, *se;
 } node;
 
+#define NW(n) ((n).nw)
+#define NE(n) ((n).ne)
+#define SW(n) ((n).sw)
+#define SE(n) ((n).se)
+
 typedef struct {
     mpz_t x, y/*, t*/;
     block *superblock;
@@ -260,10 +265,10 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     mpz_sub(shiftx1, x1, halfblock);
     mpz_sub(shifty0, y0, halfblock);
     mpz_sub(shifty1, y1, halfblock);
-    hnw = hash_rectangle(n.nw, x0, x1, y0, y1, 0);
-    hne = hash_rectangle(n.ne, shiftx0, shiftx1, y0, y1, 0);
-    hsw = hash_rectangle(n.sw, x0, x1, shifty0, shifty1, 0);
-    hse = hash_rectangle(n.se, shiftx0, shiftx1, shifty0, shifty1, 0);
+    hnw = hash_rectangle(NW(n), x0, x1, y0, y1, 0);
+    hne = hash_rectangle(NE(n), shiftx0, shiftx1, y0, y1, 0);
+    hsw = hash_rectangle(SW(n), x0, x1, shifty0, shifty1, 0);
+    hse = hash_rectangle(SE(n), shiftx0, shiftx1, shifty0, shifty1, 0);
     
     hash = hash_node(hnw, hne, hsw, hse, base->depth-1);
     mpz_clears(halfblock, shiftx0, shiftx1, shifty0, shifty1, NULL);
@@ -398,15 +403,15 @@ index(block *b, int i, int j) {
     if (((i | j) & 1) == 0) {
         if (i < 1) {
             if (j < 1) {
-                return b->content.b_n.nw;
+                return NW(b->content.b_n);
             } else {
-                return b->content.b_n.sw;
+                return SW(b->content.b_n);
             }
         } else {
             if (j < 1) {
-                return b->content.b_n.ne;
+                return NE(b->content.b_n);
             } else {
-                return b->content.b_n.se;
+                return SE(b->content.b_n);
             }
         }
     } else {
@@ -470,56 +475,56 @@ evolve(block *x) {
     if (x->depth == 1) {
         // Subblocks are all leafs
         node n = x->content.b_n;
-        assert(n.nw->tag == LEAF_B);
-        int unpack_x = n.nw->content.b_l & 3 |
-                       (n.ne->content.b_l & 3) << 2 |
-                       (n.nw->content.b_l & 12) << 2 |
-                       (n.ne->content.b_l & 12) << 4 |
-                       (n.sw->content.b_l & 3) << 8 |
-                       (n.se->content.b_l & 3) << 10 |
-                       (n.sw->content.b_l & 12) << 10 |
-                       (n.se->content.b_l & 12) << 12;
+        assert(NW(n)->tag == LEAF_B);
+        int unpack_x = NW(n)->content.b_l & 3 |
+                       (NE(n)->content.b_l & 3) << 2 |
+                       (NW(n)->content.b_l & 12) << 2 |
+                       (NE(n)->content.b_l & 12) << 4 |
+                       (SW(n)->content.b_l & 3) << 8 |
+                       (SE(n)->content.b_l & 3) << 10 |
+                       (SW(n)->content.b_l & 12) << 10 |
+                       (SE(n)->content.b_l & 12) << 12;
         r = mkblock_leaf(result[unpack_x]);
     } else {
         // Half-sized subblocks of x on the north, south, east, west, and
         // center:
         block *n, *s, *w, *e, *c;
         node no = x->content.b_n;
-        assert(no.nw->tag == NODE_B);
+        assert(NW(no)->tag == NODE_B);
         node tmp; // Not an actual node; just a convient way to store four
                   // blocks associated with corners.
         // Recall mkblock_node(nw, ne, sw, se)
         // This part is tedious and error-prone
-        n = mkblock_node(no.nw->content.b_n.ne,
-                         no.ne->content.b_n.nw,
-                         no.nw->content.b_n.se,
-                         no.ne->content.b_n.sw);
-        s = mkblock_node(no.sw->content.b_n.ne,
-                         no.se->content.b_n.nw,
-                         no.sw->content.b_n.se,
-                         no.se->content.b_n.sw);
-        w = mkblock_node(no.nw->content.b_n.sw,
-                         no.nw->content.b_n.se,
-                         no.sw->content.b_n.nw,
-                         no.sw->content.b_n.ne);
-        e = mkblock_node(no.ne->content.b_n.sw,
-                         no.ne->content.b_n.se,
-                         no.se->content.b_n.nw,
-                         no.se->content.b_n.ne);
-        c = mkblock_node(no.nw->content.b_n.se,
-                         no.ne->content.b_n.sw,
-                         no.sw->content.b_n.ne,
-                         no.se->content.b_n.nw);
+        n = mkblock_node(NE(NW(no)->content.b_n),
+                         NW(NE(no)->content.b_n),
+                         SE(NW(no)->content.b_n),
+                         SW(NE(no)->content.b_n));
+        s = mkblock_node(NE(SW(no)->content.b_n),
+                         NW(SE(no)->content.b_n),
+                         SE(SW(no)->content.b_n),
+                         SW(SE(no)->content.b_n));
+        w = mkblock_node(SW(NW(no)->content.b_n),
+                         SE(NW(no)->content.b_n),
+                         NW(SW(no)->content.b_n),
+                         NE(SW(no)->content.b_n));
+        e = mkblock_node(SW(NE(no)->content.b_n),
+                         SE(NE(no)->content.b_n),
+                         NW(SE(no)->content.b_n),
+                         NE(SE(no)->content.b_n));
+        c = mkblock_node(SE(NW(no)->content.b_n),
+                         SW(NE(no)->content.b_n),
+                         NE(SW(no)->content.b_n),
+                         NW(SE(no)->content.b_n));
         n = evolve(n);
         s = evolve(s);
         w = evolve(w);
         e = evolve(e);
         c = evolve(c);
-        tmp.nw = evolve(mkblock_node(evolve(no.nw), n, w, c));
-        tmp.ne = evolve(mkblock_node(n, evolve(no.ne), c, e));
-        tmp.sw = evolve(mkblock_node(w, c, evolve(no.sw), s));
-        tmp.se = evolve(mkblock_node(c, e, s, evolve(no.se)));
-        r = mkblock_node(tmp.nw, tmp.ne, tmp.sw, tmp.se);
+        NW(tmp) = evolve(mkblock_node(evolve(NW(no)), n, w, c));
+        NE(tmp) = evolve(mkblock_node(n, evolve(NE(no)), c, e));
+        SW(tmp) = evolve(mkblock_node(w, c, evolve(SW(no)), s));
+        SE(tmp) = evolve(mkblock_node(c, e, s, evolve(SE(no))));
+        r = mkblock_node(NW(tmp), NE(tmp), SW(tmp), SE(tmp));
     }
     return (x->res = r);
 }
@@ -645,21 +650,21 @@ write_bit(block *b, unsigned long y, unsigned long x, char bit) {
         node n = b->content.b_n;
         if (y < size/2) {
             if (x < size/2) {
-                n.nw = write_bit(n.nw, y, x, bit);
+                NW(n) = write_bit(NW(n), y, x, bit);
             } else {
-                n.ne = write_bit(n.ne, y, x-size/2, bit);
+                NE(n) = write_bit(NE(n), y, x-size/2, bit);
             }
         } else {
             if (x < size/2) {
-                n.sw = write_bit(n.sw, y-size/2, x, bit);
+                SW(n) = write_bit(SW(n), y-size/2, x, bit);
             } else {
-                n.se = write_bit(n.se, y-size/2, x-size/2, bit);
+                SE(n) = write_bit(SE(n), y-size/2, x-size/2, bit);
             }
         }
         if (n.nw == NULL || n.ne == NULL || n.sw == NULL || n.se == NULL) {
             return NULL;
         } else {
-            return mkblock_node(n.nw, n.ne, n.sw, n.se);
+            return mkblock_node(NW(n), NE(n), SW(n), SE(n));
         }
     } else {
         fprintf(stderr, "No code for writing in a block neither leaf nor node");
@@ -689,11 +694,11 @@ print_line(block *b, long y, FILE *f) {
         }
     } else if (b->tag == NODE_B) {
         if (y < size/2) {
-            print_line(b->content.b_n.nw, y, f);
-            print_line(b->content.b_n.ne, y, f);
+            print_line(NW(b->content.b_n), y, f);
+            print_line(NE(b->content.b_n), y, f);
         } else {
-            print_line(b->content.b_n.sw, y - size/2, f);
-            print_line(b->content.b_n.se, y - size/2, f);
+            print_line(SW(b->content.b_n), y - size/2, f);
+            print_line(SE(b->content.b_n), y - size/2, f);
         }
     }
 }
