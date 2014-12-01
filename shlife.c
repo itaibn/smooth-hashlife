@@ -380,6 +380,41 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y) {
     return b;
 }
 
+block *
+index(block *b, int i, int j) {
+    if (b == NULL) {return NULL;}
+    if (b->tag == LEAF_B) {return NULL;}
+
+    if (b->tag == CONTAIN_B) {
+        mpz_t x, y, halfblock, shift;
+        mpz_inits(x, y, halfblock, shift, NULL);
+        // TODO
+        mpz_clears(x, y, halfblock, shift, NULL);
+    } else if (b->tag != NODE_B) {
+        fprintf(stderr, "Invalid tag %d for block at %p (hash %lu)\n", b->tag,
+            b, b->hash);
+    }
+
+    if (((i | j) & 1) == 0) {
+        if (i < 1) {
+            if (j < 1) {
+                return b->content.b_n.nw;
+            } else {
+                return b->content.b_n.sw;
+            }
+        } else {
+            if (j < 1) {
+                return b->content.b_n.ne;
+            } else {
+                return b->content.b_n.se;
+            }
+        }
+    } else {
+        node n;
+        // TODO
+    }
+}
+
 //// CA COMPUTATION PROPER
 
 // Lookup table for 1-step of 4x4 blocks. Idea stolen from Tomas Rokicki's
