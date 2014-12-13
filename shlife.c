@@ -109,15 +109,16 @@ unsigned long ymul_cache[256];
 unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
 // A set of caches for hashes of rectangular subblocks of leaf nodes of all
 // sizes.
+size_t rectangle_hash_cache_size[LEAFSIZE * LEAFSIZE];
 unsigned long *rectangle_hash_cache[LEAFSIZE * LEAFSIZE];
 // Values xmul^i*ymul^j for 0 =< i,j < LEAFSIZE
 unsigned long point_hash_value[LEAFSIZE * LEAFSIZE];
 
 int
 init_hash_cache() {
-    int i, j, x, y, hash;
+    int i, j, x, y;
     int p, tmp;
-    unsigned long yhash, xyhash;
+    unsigned long yhash, xyhash, hash;
 
     mpz_init_set_ui(hashprime_mpz, hashprime);
 
@@ -161,8 +162,10 @@ init_hash_cache() {
                 }
                 tmp = tmp >> 1;
             }}
+            assert(hash < hashprime);
             table[p] = hash;
         }
+        rectangle_hash_cache_size[(x-1) + LEAFSIZE*(y-1)] = size;
         rectangle_hash_cache[(x-1) + LEAFSIZE*(y-1)] = table;
     }
     }
@@ -217,15 +220,18 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     //    && mpz_sgn(y0) >= 0 && mpz_cmp(y1, blocksize) =< 0);
     
     if (mpz_cmp(x0, x1) >= 0 || mpz_cmp(y0, y1) >= 0) {
-        return 0;
+        hash = 0;
+        goto end;
     }
     if (mpz_sgn(x0) == 0 && mpz_cmp(x1, blocksize) == 0 && mpz_sgn(y0) == 0 &&
         mpz_cmp(y1, blocksize) == 0) {
-        return base->hash;
+        hash = base->hash;
+        goto end;
     }
 
     if (base->tag == LEAF_B) {
         unsigned long x0l, x1l, y0l, y1l;
+        size_t size;
         unsigned long *table;
         leaf xmask, mask, pos, row, rect;
         int i;
@@ -239,16 +245,24 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         i = (x1l-x0l-1) + LEAFSIZE*(y1l-y0l-1);
         assert (0 <= i && i < LEAFSIZE*LEAFSIZE);
         table = rectangle_hash_cache[i];
+        size = rectangle_hash_cache_size[i];
         pos = base->content.b_l;
         rect = 0;
         xmask = ((1 << (x1l - x0l)) - 1) << x0l;
         for (i = y0l; i < y1l; i++) {
             mask = xmask << (i*LEAFSIZE);
-            row = (pos & mask) >> (i*LEAFSIZE+y0l);
-            rect |= row << (i*(x1l-x0l));
+            row = (pos & mask) >> (i*LEAFSIZE+x0l);
+            rect |= row << ((i-y0l)*(x1l-x0l));
+            printf("l %d (%d-%d)x(%d-%d) m %x r %x rect %x\n", i, x0l, x1l, y0l,
+                y1l, mask, row, rect);
         }
+        printf("r %x x %d (%d-%d) y %d (%d-%d)", rect, x1l-x0l, x0l, x1l,
+            y1l-y0l, y0l, y1l);
         assert(rect < 1<<((x1l-x0l)*(y1l-y0l)));
-        hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect];
+        assert(rect < size);
+        assert(size == 1<<((x1l-x0l)*(y1l-y0l)));
+        hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect] % hashprime;
+        printf(" h %lu\n", hash);
         goto end;
     } else if (base->tag != NODE_B) {
         fprintf(stderr, "CONTAIN_B not supported as input to hash_rectangle()");
@@ -272,6 +286,8 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     
     hash = hash_node(hnw, hne, hsw, hse, base->depth-1);
     mpz_clears(halfblock, shiftx0, shiftx1, shifty0, shifty1, NULL);
+
+    printf("[%lu %lu %lu %lu -> %lu]\n", hnw, hne, hsw, hse, hash);
 end:
     if (adjust) {
         mpz_t x_adj, y_adj;
