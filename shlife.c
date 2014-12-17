@@ -46,14 +46,16 @@ W     E
 typedef uint8_t leaf;
 
 // A node block recursively containing 4 smaller blocks.
+//typedef block *(node[2][2]);
 typedef struct {
-    block *nw, *ne, *sw, *se;
+    block *corner[2][2];
 } node;
 
-#define NW(n) ((n).nw)
-#define NE(n) ((n).ne)
-#define SW(n) ((n).sw)
-#define SE(n) ((n).se)
+#define NW(n) ((n).corner[0][0])
+#define NE(n) ((n).corner[0][1])
+#define SW(n) ((n).corner[1][0])
+#define SE(n) ((n).corner[1][1])
+#define CORNER(n, i, j) ((n).corner[i][j])
 
 typedef struct {
     mpz_t x, y/*, t*/;
@@ -346,7 +348,7 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     }
     //d++;
 
-    node n = {nw, ne, sw, se};
+    node n = {{{nw, ne}, {sw, se}}};
     // Calculate the hash function
     // Moved to hash_node
     /*
@@ -677,7 +679,7 @@ write_bit(block *b, unsigned long y, unsigned long x, char bit) {
                 SE(n) = write_bit(SE(n), y-size/2, x-size/2, bit);
             }
         }
-        if (n.nw == NULL || n.ne == NULL || n.sw == NULL || n.se == NULL) {
+        if (NW(n) == NULL || NE(n) == NULL || SW(n) == NULL || SE(n) == NULL) {
             return NULL;
         } else {
             return mkblock_node(NW(n), NE(n), SW(n), SE(n));
