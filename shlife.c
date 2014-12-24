@@ -403,8 +403,22 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y) {
     return b;
 }
 
+// Given a 2^nx2^n block b, return the 2^(n-1)x2^(n-1) subblock with northwest
+// corner at (i*2^(n-2), j*2^(n-2)). For example:
+//
+//      N
+//  +-+---+-+
+//  | |   | |
+//  | | r | |
+//  | |   | |
+// W| +---+ |E    r = block_index(A, 1, 0)
+//  |   A   |
+//  |       |
+//  |       |
+//  +-------+
+//      S
 block *
-index(block *b, int i, int j) {
+block_index(block *b, int i, int j) {
     if (b == NULL) {return NULL;}
     if (b->tag == LEAF_B) {return NULL;}
 
@@ -418,6 +432,26 @@ index(block *b, int i, int j) {
             b, b->hash);
     }
 
+    node b_no = b->content.b_n;
+    
+    if (((i | j) & 1) == 0) {
+        return CORNER(b_no, i, j);
+    } else {
+        node n, tmpn;
+        block *tmpb;
+        int p, i0, i1, q, j0, j1;
+        for (p=0; p<2; p++) {
+        for (q=0; q<2; q++) {
+            i0 = ((p + i) & 2) >> 1;
+            i1 = (p + i) & 1;
+            j0 = ((q + j) & 2) >> 1;
+            j1 = (q + j) & 1;
+            tmpb = CORNER(b_no, i0, j0);
+            CORNER(n, p, q) = block_index(b, i1<<1, j1<<1);
+        }}
+        return mkblock_node(NW(n), NE(n), SW(n), SE(n));
+    }
+    /*
     if (((i | j) & 1) == 0) {
         if (i < 1) {
             if (j < 1) {
@@ -436,6 +470,7 @@ index(block *b, int i, int j) {
         node n;
         // TODO
     }
+    */
 }
 
 //// CA COMPUTATION PROPER
