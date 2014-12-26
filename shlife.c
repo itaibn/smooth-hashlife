@@ -63,7 +63,6 @@ typedef struct {
 } subblock;
 
 // General block. May be a leaf or node.
-// To be defined: subblocks of bigger blocks.
 struct block_struct {
     enum b_tag {
         EMPTY = 0, // For uninitialized block entries in the hash table.
@@ -96,7 +95,7 @@ struct block_struct {
 // primitive roots but this hasn't been checked.
 
 // Note: hashprime must be less than 2^31 for code to work. See comment in
-// mkblock_node.
+// hash_node().
 const unsigned long hashprime = 1000000007;
 mpz_t hashprime_mpz;
 const unsigned long xmul = 2331, ymul = 121212121;
@@ -198,6 +197,7 @@ hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
     return (hnw + xmul_d*hne + ymul_d*hsw + xymul_d*hse) % hashprime;
 }
 
+// Here comes the most complicated function among the hashing utilities.
 // Compute the hash of a rectangular subblock with northwest corner (x0, y0) and
 // southeast corner (x1, y1). The rectangle is truncated if either (x0, y0) or
 // (x1, y1) extend past the ends of base. If the parameter 'adjust' is set
@@ -241,9 +241,6 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         x1l = mpz_get_ui(x1);
         y0l = mpz_get_ui(y0);
         y1l = mpz_get_ui(y1);
-        //hash = point_hash_value[x0l + LEAFSIZE*y0l]
-        //    * rectangle_hash_cache[(x1l-x0l-1) + (LEAFSIZE-1)*(y1l-y0l-1)]
-        //    % hashprime;
         i = (x1l-x0l-1) + LEAFSIZE*(y1l-y0l-1);
         assert (0 <= i && i < LEAFSIZE*LEAFSIZE);
         table = rectangle_hash_cache[i];
@@ -255,11 +252,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
             mask = xmask << (i*LEAFSIZE);
             row = (pos & mask) >> (i*LEAFSIZE+x0l);
             rect |= row << ((i-y0l)*(x1l-x0l));
-            printf("l %d (%d-%d)x(%d-%d) m %x r %x rect %x\n", i, x0l, x1l, y0l,
-                y1l, mask, row, rect);
         }
-        printf("r %x x %d (%d-%d) y %d (%d-%d)", rect, x1l-x0l, x0l, x1l,
-            y1l-y0l, y0l, y1l);
         assert(rect < 1<<((x1l-x0l)*(y1l-y0l)));
         assert(rect < size);
         assert(size == 1<<((x1l-x0l)*(y1l-y0l)));
@@ -294,7 +287,6 @@ end:
     if (adjust) {
         mpz_t x_adj, y_adj;
         uint64_t xy_adj;
-        //mpz_init(pow);
         mpz_init_set_ui(x_adj, xmul);
         mpz_neg(x0, x0);
         mpz_powm(x_adj, x_adj, x0, hashprime_mpz);
@@ -316,8 +308,6 @@ block * new_block(unsigned long hash);
 
 block *
 mkblock_leaf(leaf l) {
-    // Hash function will be changed later
-    //unsigned long hash = (l*l*l+94455) % hashprime;
     unsigned long hash = leaf_hash_cache[l];
     block *b = new_block(hash);
     if (b->tag != EMPTY) {return b;}
@@ -346,21 +336,8 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
             "larger than 2^257\n");
         return NULL;
     }
-    //d++;
 
     node n = {{{nw, ne}, {sw, se}}};
-    // Calculate the hash function
-    // Moved to hash_node
-    /*
-    uint64_t xmul_d, ymul_d, xymul_d, nwh, neh, swh, seh;
-    nwh = nw->hash; neh = ne->hash; swh = sw->hash; seh = se->hash;
-    xmul_d = xmul_cache[d];
-    ymul_d = ymul_cache[d];
-    xymul_d = xmul_d * ymul_d % hashprime;
-    // Since hashprime is less than 2^31, all the terms in the sum are less than
-    // 2^62, guaranteeing that there is no overflow.
-    hash = (nwh + xmul_d*neh + ymul_d*swh + xymul_d*seh) % hashprime;
-    */
     hash = hash_node(nw->hash, ne->hash, sw->hash, se->hash, d);
     b = new_block(hash);
     if (b->tag != EMPTY) {return b;}
@@ -447,30 +424,11 @@ block_index(block *b, int i, int j) {
             j0 = ((q + j) & 2) >> 1;
             j1 = (q + j) & 1;
             tmpb = CORNER(b_no, i0, j0);
-            CORNER(n, p, q) = block_index(b, i1<<1, j1<<1);
+            tmpn = tmpb->content.b_n;
+            CORNER(n, p, q) = CORNER(tmpn, i1, j1);
         }}
         return mkblock_node(NW(n), NE(n), SW(n), SE(n));
     }
-    /*
-    if (((i | j) & 1) == 0) {
-        if (i < 1) {
-            if (j < 1) {
-                return NW(b->content.b_n);
-            } else {
-                return SW(b->content.b_n);
-            }
-        } else {
-            if (j < 1) {
-                return NE(b->content.b_n);
-            } else {
-                return SE(b->content.b_n);
-            }
-        }
-    } else {
-        node n;
-        // TODO
-    }
-    */
 }
 
 //// CA COMPUTATION PROPER
