@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // I'm planning on using bignums for coordinates to allow sizes >2^64. Note that
 // the current codebase does not support anything >2^31.
@@ -377,6 +378,7 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y) {
     mpz_init_set(b->content.b_c.x, x);
     mpz_init_set(b->content.b_c.y, y);
     // ... b->content.b_c.t ...
+    mpz_clears(size, x_east, y_south, NULL);
     return b;
 }
 
