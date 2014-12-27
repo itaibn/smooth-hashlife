@@ -209,12 +209,12 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     //assert (mpz_cmp(ix0, ix1) =< 0 && mpz_cmp(iy0, y1) =< 0)
 
     unsigned long hash;
-    mpz_t blocksize, zero, x0, x1, y0, y1;
+    mpz_t tmp, blocksize, zero, x0, x1, y0, y1;
 
     mpz_init_set_ui(zero, 0);
     mpz_init_set_ui(blocksize, LEAFSIZE);
     mpz_mul_2exp(blocksize, blocksize, base->depth);
-    mpz_inits(x0, x1, y0, y1, NULL);
+    mpz_inits(tmp, x0, x1, y0, y1, NULL);
     my_mpz_max(x0, ix0, zero);
     my_mpz_max(y0, iy0, zero);
     my_mpz_min(x1, ix1, blocksize);
@@ -260,6 +260,33 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect] % hashprime;
         printf(" h %lu\n", hash);
         goto end;
+    } else if (base->tag == CONTAIN_B) {
+        subblock s = base->content.b_c;
+        block *super;
+        mpz_t superx0, superx1, supery0, supery1, x_adj, y_adj;
+        uint64_t xy_adj;
+
+        super = s.superblock;
+        mpz_inits(superx0, superx1, supery0, supery1, x_adj, y_adj, NULL);
+        mpz_add(superx0, x0, s.x);
+        mpz_add(superx1, x1, s.x);
+        mpz_add(supery0, y0, s.y);
+        mpz_add(supery1, y1, s.y);
+
+        hash = hash_rectangle(superblock, superx0, superx1, supery0, supery1,
+            0);
+
+        mpz_set_ui(x_adj, xmul);
+        mpz_neg(tmp, x0);
+        mpz_powm(x_adj, x_adj, tmp, hashprime_mpz);
+        mpz_init_set_ui(y_adj, ymul);
+        mpz_neg(tmp, y0);
+        mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
+        xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
+        hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
+
+        mpz_clears(superx0, superx1, supery0, supery1, NULL);
+        goto end;
     } else if (base->tag != NODE_B) {
         fprintf(stderr, "CONTAIN_B not supported as input to hash_rectangle()");
     }
@@ -289,16 +316,16 @@ end:
         mpz_t x_adj, y_adj;
         uint64_t xy_adj;
         mpz_init_set_ui(x_adj, xmul);
-        mpz_neg(x0, x0);
-        mpz_powm(x_adj, x_adj, x0, hashprime_mpz);
+        mpz_neg(tmp, x0);
+        mpz_powm(x_adj, x_adj, tmp, hashprime_mpz);
         mpz_init_set_ui(y_adj, ymul);
-        mpz_neg(y0, y0);
-        mpz_powm(y_adj, y_adj, y0, hashprime_mpz);
+        mpz_neg(tmp, y0);
+        mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
         xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
         hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
         mpz_clears(x_adj, y_adj, NULL);
     }
-    mpz_clears(blocksize, zero, x0, x1, y0, y1, NULL);
+    mpz_clears(tmp, blocksize, zero, x0, x1, y0, y1, NULL);
     return hash;
 }
 
