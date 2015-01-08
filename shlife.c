@@ -572,13 +572,13 @@ init_result() {
 block *evolve(block *x);
 
 block *
-half_evolve(block *x, int i, int j) {
+half_evolve(block *b, int i, int j) {
     node n;
     int x,y;
 
     for (x=0; x<2; x++) {
     for (y=0; y<2; y++) {
-        CORNER(n, x, y) = evolve(block_index(x, i+x, j+y));
+        CORNER(n, x, y) = evolve(block_index(b, i+x, j+y));
     }}
 
     return mkblock_node(NW(n), NE(n), SW(n), SE(n));
@@ -596,14 +596,21 @@ evolve(block *x) {
     }
     if (x->tag == CONTAIN_B) {
         mpz_t tmp;
+        block *new_sblock;
         unsigned long x_approx, y_approx;
 
         mpz_init(tmp);
         mpz_tdiv_q_2exp(tmp, x->content.b_c.x, LGLENGTH(x));
         x_approx = mpz_get_ui(tmp);
-        mpz_tdiv_q_2exp(tmp, x->content.b_c.y, LGLENTH(x));
+        mpz_tdiv_q_2exp(tmp, x->content.b_c.y, LGLENGTH(x));
         y_approx = mpz_get_ui(tmp);
         mpz_clear(tmp);
+
+        assert(x_approx | y_approx < 2);
+
+        new_sblock = half_evolve(x->content.b_c.superblock, (int) x_approx,
+            (int) y_approx);
+        r = mkblock_contain(new_sblock, x->content.b_c.x, x->content.b_c.y, 1);
     }
     if (x->tag != NODE_B) {
         fprintf(stderr, "Only nodes have evolve() implemented\n");
@@ -623,6 +630,14 @@ evolve(block *x) {
                        (SE(n)->content.b_l & 12) << 12;
         r = mkblock_leaf(result[unpack_x]);
     } else {
+        int i, j;
+        node n;
+        for (i=0; i<2; i++) {
+        for (j=0; j<2; j++) {
+            CORNER(n, i, j) = evolve(half_evolve(x, i, j));
+        }}
+        r = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+/*
         // Half-sized subblocks of x on the north, south, east, west, and
         // center:
         block *n, *s, *w, *e, *c;
@@ -662,6 +677,7 @@ evolve(block *x) {
         SW(tmp) = evolve(mkblock_node(w, c, evolve(SW(no)), s));
         SE(tmp) = evolve(mkblock_node(c, e, s, evolve(SE(no))));
         r = mkblock_node(NW(tmp), NE(tmp), SW(tmp), SE(tmp));
+*/
     }
     return (x->res = r);
 }
@@ -959,5 +975,14 @@ main(int argc, char **argv) {
         c = block_index(b, i, j);
         display(c, stdout);
     }}
+    for (i=0; i<2; i++) {
+    for (j=0; j<2; j++) {
+        printf("Half-evolve %d %d:\n", i, j);
+        c = half_evolve(b, i, j);
+        display(c, stdout);
+    }}
+    printf("Result:\n");
+    c = evolve(b);
+    display(c, stdout);
     exit(0);
 }
