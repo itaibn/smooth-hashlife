@@ -382,26 +382,54 @@ block *block_index(block *b, int y, int x);
 
 block *
 mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
+    //gmp_printf("mkc s(%lu %p) x %Zd y %Zd dd %lu\n", (unsigned long)
+    //    superblock->depth, superblock, x, y, (unsigned long) diff);
+    //display(superblock, stdout);
+    //printf("\n");
+    assert(superblock);
+    assert(mpz_sgn(x) >= 0);
+    assert(mpz_sgn(y) >= 0);
     assert(diff >= 0);
-    depth_t dd = LGLENGTH(superblock);
-    assert(dd >= diff);
+    assert(diff <= superblock->depth);
+
+    depth_t d;
+    d = superblock->depth;
+
+    //depth_t dd = LGLENGTH(superblock);
+    //assert(dd >= diff);
     if (diff == 0) {
         assert(mpz_sgn(x) == 0 && mpz_sgn(y) == 0);
         return superblock;
-    } else if (diff > 1) {
+    }
+
+    if (superblock->tag == CONTAIN_B) {
+        mpz_t nx, ny;
+        block *res;
+        mpz_init(nx); mpz_init(ny);
+        mpz_add(nx, x, superblock->content.b_c.x);
+        mpz_add(ny, y, superblock->content.b_c.y);
+        res = mkblock_contain(superblock->content.b_c.superblock, nx, ny,
+            diff+1);
+        mpz_clear(nx); mpz_clear(ny);
+        assert(res->depth > 0 || res->tag == LEAF_B);
+        return res;
+    }
+    
+    if (diff > 1) {
         mpz_t tmp, nx, ny;
         block *subsuperblock, *res;
         unsigned long x_approx, y_approx;
+        depth_t logsize = LGLENGTH(superblock);
 
         mpz_init(tmp);
         mpz_init(nx); mpz_init(ny);
-        mpz_tdiv_q_2exp(tmp, x, dd-2);
+        mpz_tdiv_q_2exp(tmp, x, logsize-2);
         x_approx = mpz_get_ui(tmp);
-        mpz_mul_2exp(tmp, tmp, dd-2);
+        mpz_mul_2exp(tmp, tmp, logsize-2);
         mpz_sub(nx, x, tmp);
-        mpz_tdiv_q_2exp(tmp, y, dd-2);
+        mpz_tdiv_q_2exp(tmp, y, logsize-2);
         y_approx = mpz_get_ui(tmp);
-        mpz_mul_2exp(tmp, tmp, dd-2);
+        mpz_mul_2exp(tmp, tmp, logsize-2);
         mpz_sub(ny, y, tmp);
         mpz_clear(tmp);
 
@@ -410,38 +438,53 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
         
         res = mkblock_contain(subsuperblock, nx, ny, diff-1);
         mpz_clear(nx); mpz_clear(ny);
+        assert(res->depth > 0 || res->tag == LEAF_B);
         return res;
     }
 
-    depth_t d;
+    assert(diff == 1);
+    assert(superblock->tag == NODE_B);
+    
+    if (d == 1) {
+        //printf("mkleaf case of mkcontain\n");
+        unsigned long xi, yi;
+        xi = mpz_get_ui(x);
+        yi = mpz_get_ui(y);
+        assert(xi <= 2 && yi <= 2);
+        return block_index(superblock, (int) xi, (int) yi);
+    }
+
     unsigned long hash;
     mpz_t size, x_east, y_south;
     block *b;
 
-    d = superblock->depth-diff;
     assert(d >= 0);
     mpz_init_set_ui(size, LEAFSIZE);
-    mpz_mul_2exp(size, size, d);
+    mpz_mul_2exp(size, size, d-diff);
     mpz_init(x_east);
     mpz_add(x_east, x, size);
     mpz_init(y_south);
     mpz_add(y_south, y, size);
 
+    mpz_mul_2exp(size, size, diff);
+    //gmp_printf("- d %lu size %Zd x_east %Zd y_south %Zd\n", (unsigned long) d,
+    //    size, x_east, y_south);
     assert(mpz_sgn(x) >= 0 && mpz_cmp(x_east, size) <= 0 &&
         mpz_sgn(y) >= 0 && mpz_cmp(y_south, size) <= 0
         && superblock);
 
     hash = hash_rectangle(superblock, x, x_east, y, y_south, 1);
+    mpz_clears(size, x_east, y_south, NULL);
 
     b = new_block(hash);
     if (b->tag != EMPTY) {return b;}
     b->tag = CONTAIN_B;
-    b->depth = d;
+    b->depth = d - diff;
     b->content.b_c.superblock = superblock;
     mpz_init_set(b->content.b_c.x, x);
     mpz_init_set(b->content.b_c.y, y);
     // ... b->content.b_c.t ...
-    mpz_clears(size, x_east, y_south, NULL);
+    assert(b->depth > 0 || b->tag == LEAF_B);
     return b;
 }
 
@@ -461,12 +504,18 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
 //      S
 block *
 block_index(block *b, int i, int j) {
+    //printf("bindex b(%lu %lu) %d %d\n", (unsigned long) b->depth, b->hash, i,
+    //    j);
+    //display(b, stdout);
+    //printf("\n");
+
     assert(0 <= i && i <= 2 && 0 <= j && j <= 2);
 
     if (b == NULL) {return NULL;}
     if (b->tag == LEAF_B) {return NULL;}
 
     if (b->tag == CONTAIN_B) {
+        //printf("CONTAIN_B\n");
         mpz_t x, y, halfblock, shift;
         block *res;
 
@@ -479,14 +528,18 @@ block_index(block *b, int i, int j) {
         mpz_add(y, b->content.b_c.y, shift);
         res = mkblock_contain(b->content.b_c.superblock, x, y, 2);
         mpz_clears(x, y, halfblock, shift, NULL);
+        
+        return res;
     } else if (b->tag != NODE_B) {
         fprintf(stderr, "Invalid tag %d for block at %p (hash %lu)\n", b->tag,
             b, b->hash);
     }
 
+    assert(b->tag == NODE_B);
     node b_no = b->content.b_n;
     
     if (((i | j) & 1) == 0) {
+        //printf("Easy corner\n");
         // This isn't just for optimization; block_index(b, i, j) where either i
         // or j is odd recursively calls the case where both i and j are even.
         return CORNER(b_no, i/2, j/2);
@@ -501,7 +554,10 @@ block_index(block *b, int i, int j) {
     // the proper way to do this is to have a 'subleaf' block which consists of
     // a quarter of a leaf as well as a general method for combining blocks into
     // nodes as well as subleafs into leafs.
-        leaf res, tmp;
+        //printf("depth 1 node\n");
+
+        leaf res, bit;
+        block *corner;
         int p, i0, i1, q, j0, j1;
         res = 0;
         for (p=0; p<2; p++) {
@@ -510,11 +566,14 @@ block_index(block *b, int i, int j) {
             i1 = (p + i) & 1;
             j0 = ((q + j) & 2) >> 1;
             j1 = (q + j) & 1;
-            tmp = 1 & (CORNER(b_no, i0, j0)->content.b_l >> (LEAFSIZE*i1 + j1));
-            res |= tmp << (LEAFSIZE*p + q);
+            assert(CORNER(b_no, i0, j0)->tag == LEAF_B);
+            bit = 1 & (CORNER(b_no, i0, j0)->content.b_l >> (LEAFSIZE*i1 + j1));
+            res |= bit << (LEAFSIZE*p + q);
         }}
+        //printf("l %x\n", res);
         return mkblock_leaf(res);
     } else {
+        //printf("depth >1 node\n");
         node n;
         block *tmpb;
         int p, i0, i1, q, j0, j1;
@@ -574,11 +633,14 @@ block *evolve(block *x);
 block *
 half_evolve(block *b, int i, int j) {
     node n;
+    block *tmp;
     int x,y;
 
     for (x=0; x<2; x++) {
     for (y=0; y<2; y++) {
-        CORNER(n, x, y) = evolve(block_index(b, i+x, j+y));
+        tmp = evolve(block_index(b, i+x, j+y));
+        assert(tmp != NULL);
+        CORNER(n, x, y) = tmp;
     }}
 
     return mkblock_node(NW(n), NE(n), SW(n), SE(n));
@@ -611,6 +673,7 @@ evolve(block *x) {
         new_sblock = half_evolve(x->content.b_c.superblock, (int) x_approx,
             (int) y_approx);
         r = mkblock_contain(new_sblock, x->content.b_c.x, x->content.b_c.y, 1);
+        goto end;
     }
     if (x->tag != NODE_B) {
         fprintf(stderr, "Only nodes have evolve() implemented\n");
@@ -679,6 +742,7 @@ evolve(block *x) {
         r = mkblock_node(NW(tmp), NE(tmp), SW(tmp), SE(tmp));
 */
     }
+    end:
     return (x->res = r);
 }
 
@@ -857,15 +921,45 @@ print_line(block *b, long y, FILE *f) {
 
 int
 display(block *b, FILE *f) {
+    switch (b->tag) {
+        case LEAF_B:
+            fprintf(f, "%x", b->content.b_l);
+            break;
+        case CONTAIN_B:
+            gmp_fprintf(f, "c[%Zd %Zd]", b->content.b_c.x, b->content.b_c.y);
+            display(b->content.b_c.superblock, f);
+            break;
+        case NODE_B:
+            fprintf(f, "n(");
+            int i, j;
+            for (i=0; i<2; i++) {
+            for (j=0; j<2; j++) {
+                display(CORNER(b->content.b_n, i, j), f);
+            }}
+            fprintf(f, ")");
+            break;
+        default:
+            fprintf(stderr, "Invalid tag for block input for display()\n");
+    }
+}
+
+/*
+int
+display(block *b, FILE *f) {
+    if (b->tag != LEAF_B && b->tag != NODE_B) {
+        fprintf(stderr, "CONTAIN_B not supported\n");
+        return;
+    }
+
     unsigned long size = 2;
-    /*
+    / *
     block *tmp = b;
     while (tmp->tag != LEAF_B) {
         assert(tmp->tag == NODE_B);
         size <<= 1;
         tmp = tmp->content.b_n.nw;
     }
-    */
+    * /
     size = 2 << b->depth;
     if (size == 0) {
         fprintf(stderr, "Overflow error: code doesn't support blocks of this"
@@ -879,6 +973,7 @@ display(block *b, FILE *f) {
         fputc('\n', f);
     }
 }
+*/
 
 //// HASH TABLE-RELATED FUNCTIONS
 // Note: Currently this sucks, there is no hash table resizing nor garbage
@@ -953,7 +1048,7 @@ main(int argc, char **argv) {
     fclose(f);
 
     mpz_t x[4];
-    int i, err=0;
+    int i, j, err=0;
     for (i=0; i<4; i++) {
         err |= mpz_init_set_str(x[i], argv[i+2], 10);
     }
@@ -962,12 +1057,27 @@ main(int argc, char **argv) {
         exit(1);
     }
 
+    node n;
+    mpz_t tmpx, tmpy, shift;
+    mpz_inits(tmpx, tmpy, shift, NULL);
+    mpz_set_ui(shift, LEAFSIZE);
+    mpz_mul_2exp(shift, shift, b->depth-2);
+    for (i=0; i<2; i++) {
+    for (j=0; j<2; j++) {
+        mpz_set(tmpx, x[0]);
+        mpz_addmul_ui(tmpx, shift, i);
+        mpz_set(tmpy, x[1]);
+        mpz_addmul_ui(tmpy, shift, j);
+        CORNER(n, i, j) = mkblock_contain(b, tmpx, tmpy, 2);
+    }}
+    mpz_clears(tmpx, tmpy, shift, NULL);
+    b = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+
     //display(evolve(b), stdout);
     display(b, stdout);
     //if (b->tag == NODE_B) display(b->content.b_n.nw, stdout);
     printf("%lu\n", b->hash);
     printf("%lu\n", hash_rectangle(b, x[0], x[1], x[2], x[3], 1));
-    int j;
     block *c;
     for (i=0; i<3; i++) {
     for (j=0; j<3; j++) {
