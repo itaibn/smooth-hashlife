@@ -810,7 +810,6 @@ read_life_105(FILE *f) {
     }
     
     unsigned long y, x;
-    int res;
     block *b, *empty, *tmp;
     b = empty = mkblock_leaf(0);
     x = y = 0;
@@ -978,8 +977,6 @@ write_bit(block *b, unsigned long y, unsigned long x, char bit) {
 int
 display_line(block *b, mpz_t y, mpz_t x0, mpz_t x1, int newline, FILE *f) {
     assert(mpz_cmp(x0, x1) <= 0);
-    //TRACE("l0 %Zd %Zd %Zd %d b %d %lu\n", y, x0, x1, newline, (int) b->depth,
-    //    b->hash);
     mpz_t size, halfsize, tmpx0, tmpx1, tmpy;
 
     mpz_init(size); mpz_init(halfsize); mpz_init(tmpx0); mpz_init(tmpx1);
@@ -988,7 +985,6 @@ display_line(block *b, mpz_t y, mpz_t x0, mpz_t x1, int newline, FILE *f) {
     mpz_mul_2exp(size, size, b->depth);
     mpz_tdiv_q_2exp(halfsize, size, 1);
 
-    //TRACE("l1\n");
     if (mpz_sgn(y) < 0 || mpz_cmp(y, size) >= 0 || mpz_sgn(x1) <= 0 ||
         mpz_cmp(x0, size) >= 0) {
         goto end;
@@ -999,36 +995,24 @@ display_line(block *b, mpz_t y, mpz_t x0, mpz_t x1, int newline, FILE *f) {
     leaf bt;
     node nb;
     subblock sb;
-    //TRACE("l2 %d\n", b->tag);
     switch (b->tag) {
         case LEAF_B:
-            //TRACE("l3.0\n");
             yl = mpz_get_ui(y);
-            //TRACE("l3.0.1\n");
             if (mpz_sgn(x0) < 0) {
-                //TRACE("x0 <<\n");
                 x0l = 0;
             } else {
                 x0l = mpz_get_ui(x0);
             }
-            //TRACE("l3.0.2\n");
             if (mpz_cmp(x1, size) > 0) {
-                //TRACE("x1 >>\n");
                 x1l = LEAFSIZE;
             } else {
                 x1l = mpz_get_ui(x1);
             }
-            //TRACE("l3.0.3\n");
             bt = b->content.b_l;
-            //TRACE("l %d\n", bt);
 
             assert(x0l < x1l);
             for (i=x0l; i<x1l; i++) {
-                //TRACE("loop i %d\n", i);
-                char c;
                 bit = 1 & (bt >> (yl*LEAFSIZE + i));
-                //c = bit ? '*' : '.';
-                //TRACE("printing %c\n", c);
                 fputc(bit ? '*' : '.', f);
             }
             break;
