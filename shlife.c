@@ -360,18 +360,22 @@ mkblock_leaf(leaf l) {
 
 // Combine four blocks into a node block
 block *
-mkblock_node(block *nw, block *ne, block *sw, block *se) {
+mkblock_node_tr(block *nw, block *ne, block *sw, block *se, int trace) {
     unsigned long hash;
     block *b;
     depth_t d;
 
     if (nw == NULL || ne == NULL || sw == NULL || se == NULL) {
+        TRACE("null case\n");
         return NULL;
     }
     d = nw->depth;
     if (ne->depth != d || sw->depth != d || se->depth != d) {
+        TRACE("bad sizes\n");
         return NULL;
     }
+    if (trace) {TRACE("depth %d %d %d %d\n", nw->depth, ne->depth, sw->depth,
+        se->depth);}
     if (d >= 256) {
         fprintf(stderr, "This implementation currently does not supported sizes"
             "larger than 2^257\n");
@@ -386,6 +390,11 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     b->content.b_n = n;
     b->depth = d+1;
     return b;
+}
+
+block *
+mkblock_node(block *nw, block *ne, block *sw, block *se) {
+    return mkblock_node_tr(nw, ne, sw, se, 0);
 }
 
 block *block_index(block *b, int y, int x);
@@ -847,15 +856,38 @@ read_life_105(FILE *f) {
     }
 }
 
-/*
+int display_raw(block *b, FILE *f);
+
+block *
+blank_block(depth_t lglength) {
+    if (lglength < LGLEAFSIZE) {
+        fprintf(stderr, "too small argument to blank_block()\n");
+    }
+
+    block *blank;
+    blank = mkblock_leaf(0);
+    while (LGLENGTH(blank) < lglength) {
+        blank = mkblock_node(blank, blank, blank, blank);
+    }
+    return blank;
+}
+
+// To aid a lazy implementation, a maximum length for lines
+#define MAXMCLINES 1000000
 block *
 read_mc(FILE *f) {
-    return NULL; // Screw this. I should probably only start working on reading
-                 // .mc files after I have the hash-table code to support it.
+    //return NULL; // Screw this. I should probably only start working on reading
+    //             // .mc files after I have the hash-table code to support it.
 
     char c;
 
     // Read first line: "[M2] ..."
+    while ((c = getc(f)) != '\n') {
+        if (c == EOF) {
+            return NULL;
+        }
+    } 
+    // Read second line: "#..."
     while ((c = getc(f)) != '\n') {
         if (c == EOF) {
             return NULL;
@@ -870,18 +902,119 @@ read_mc(FILE *f) {
         blank_eight);
     if (LEAFSIZE != 2)
         {fprintf(stderr, "read_mc() needs LEAFSIZE=2\n"); return NULL;}
-    blocktable / *= ...* /;
+    blocktable = malloc(MAXMCLINES * sizeof(block *));
+    blocktable[0] = NULL;
+    blocktable[1] = NULL;
+    //if (DEBUG) display_raw(blank_eight);
 
-    while(1) {
+    //int inw, ine, isw, ise, depth;
+    int depth;
+    int i,j;
+    int index;
+    node n;
+    index = 1;
+    TRACE("i %d\n", index);
+    while(index < MAXMCLINES) {
+        if (DEBUG) {
+            TRACE("previous patterns (index=%d):\n", index);
+            for (i=0; i<index; i++) {
+                TRACE("(%d)", i);
+                display_raw(blocktable[i], stderr);
+            }
+            TRACE("\n");
+        }
+        block *current;
         c = getc(f);
         if (c == '$' || c == '*' || c == '.') {
-            int x=0, y=0;
+            int x=0, y=0, bit;
+            TRACE("8x8\n");
+            current = blank_eight;
             while (c != '\n') {
                 switch(c) {
-                    //case '
-                    }}}}
+                    case '.':
+                        bit = 0;
+                        goto dot_or_star;
+                    case '*':
+                        bit = 1;
+                    dot_or_star:
+                        current = write_bit(current, y, x, bit);
+                        x++;
+                        break;
+                    case '$':
+                        x = 0;
+                        y++;
+                        break;
+                    default:
+                        fprintf(stderr, "Invalid formatting in Macrocell "
+                            "file\n");
+                        return NULL; // WARNING: Doesn't deallocate resources.
+                }
+                c = getc(f);
+            }
+        } else if ('0' <= c && c <= '9') {
+            TRACE("big block\n");
+            int x[5];
+            for (i=0; i<5; i++) {
+                x[i] = 0;
+                do {
+                    x[i] = x[i]*10 + (c - '0');
+                    c = getc(f);
+                } while ('0' <= c && c <= '9');
+                if (i<4) {
+                    TRACE("verify c=%c (%d)\n", c, c);
+                    assert(c == ' ');
+                    c = getc(f);
+                    assert('0' <= c && c <= '9');
+                }
+                TRACE("numeral %d\n", x[i]);
+            }
+            if (c == '\r') {c = getc(f);}
+            assert(c == '\n');
+            assert(x[1] < index && x[2] < index && x[3] < index && x[4] <
+                index);
+
+            depth = x[0];
+            for (i=0; i<2; i++) {
+            for (j=0; j<2; j++) {
+                if (x[2*i+j+1] == 0) {
+                    CORNER(n, i, j) = blank_block(depth-1);
+                } else if (x[2*i+j+1] < index) {
+                    CORNER(n, i, j) = blocktable[x[2*i+j+1]];
+                } else {
+                    fprintf(stderr, "Bad formatting\n");
+                    return NULL; // Ditto
+                }
+            }}
+            /*
+            NW(n) = blocktable[x[1]];
+            NE(n) = blocktable[x[2]];
+            SW(n) = blocktable[x[3]];
+            SE(n) = blocktable[x[4]];
+            */
+
+            TRACE("making block ");
+            if (DEBUG) {
+                for (i=0; i<2; i++) {
+                for (j=0; j<2; j++) {
+                    display(CORNER(n, i, j), stderr);
+                }}
+            }
+            TRACE("\n");
+            current = mkblock_node_tr(NW(n), NE(n), SW(n), SE(n), 1);
+            assert(current && LGLENGTH(current) == depth);
+        } else if (c == EOF) {
+            break;
+        } else {
+            fprintf(stderr, "Nonsensical line in .mc");
+        }
+
+        blocktable[index] = current;
+        index++;
+    }
+
+    TRACE("done\n");
+    return blocktable[index-1];
 }
-*/
 
 // Useful for debugging.
 int
@@ -1226,7 +1359,8 @@ main(int argc, char **argv) {
         fprintf(stderr, "Error opening file\n");
         exit(1);
     }
-    b = read_life_105(f);
+    //b = read_life_105(f);
+    b = read_mc(f);
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
