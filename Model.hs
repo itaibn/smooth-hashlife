@@ -50,7 +50,8 @@ subblock m b (i,j) = let
     n = i-2^(m-1)
     w = j-2^(m-1)
   in
-    [b !! a !! b | a <- [n..n+s], b <- [w..w+s]]
+    --[b !! x !! y | x <- [n..n+s], y <- [w..w+s]]
+    [[b !! y !! x | x <- [w..w+s-1]] | y <- [n..n+s-1]]
 
 -- (Apologies for the vague pronouns and specifiers in the followng.)
 --
@@ -72,14 +73,18 @@ focal n b = if not (checkSize (n+2) b) then error "Invalid board"
         [b!!i!!j | i <- [], j <- []]
 -}
 focal 0 b = let s = size b in
-    [b!!i!!j | i <- [1..s-1], j <- [1..s-1]] -- ad hoc simplification of the interval
+    [(i,j) | i <- [1..s-1], j <- [1..s-1]] -- ad hoc simplification of the interval
 focal i b = let
     siz = size b
     base = focal (i-1) b
-    posCond (n,m) = n >= depthToSize i && n < s-depthToSize i && m >=
-        depthToSize i && m < s-depthToSize i
+    posCond (n,m) = n >= depthToSize i && n < siz-depthToSize i && m >=
+        depthToSize i && m < siz-depthToSize i
     posFiltered = filter posCond base
-    isNearby (n,m) (t,u) = max (abs (n-t)) (abs (m-u)) 
+    isNearby (n,m) (t,u) = max (abs (n-t)) (abs (m-u)) <= depthToSize i `div` 2
+    challengers foc = filter (isNearby foc) $ filter (/=foc) base
+    rating pt = hash (subblock i b pt)
+    isFocal foc = all (<rating foc) (map rating (challengers foc))
+    in filter isFocal posFiltered
 
 {-
 main = interact ((++"\n").show.hash.map (map toInt).lines)
