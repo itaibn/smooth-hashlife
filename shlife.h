@@ -64,6 +64,14 @@ typedef struct {
     block *superblock;
 } subblock;
 
+struct inner_pattern;
+struct list_struct;
+
+typedef struct list_struct {
+    struct inner_pattern *elem;
+    struct list_struct *next;
+} blocklist;
+
 // General block. May be a leaf or node.
 struct block_struct {
     enum b_tag {
@@ -81,10 +89,20 @@ struct block_struct {
     depth_t depth;
 //    unsigned long refcount;
     block *res;
+    
+    int nfocus;
+    struct inner_pattern *foci;
+
     int index;
 };
 
 #define LGLENGTH(b) ((b)->depth+LGLEAFSIZE)
+
+struct inner_pattern {
+    mpz_t x, y /*, t*/;
+    block *pattern;
+    int depth_diff;
+};
 
 //// TOOLS FOR CALCULATING THE HASH FUNCTION
 // The intended hash function is as follows: Given a block b of size 2^nx2^n, it
@@ -186,14 +204,22 @@ block *mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff);
 block *
 block_index(block *b, int i, int j);
 
+// Make a block with every cell dead of sidelength 2^lglength
+block *blank_block(depth_t lglength);
+
+// Write over coordinate (x,y) of b to have liveness bit, and return the
+// resulting block. (This does not actually modify the block b.)
+block *write_bit(block *b, unsigned long y, unsigned long x, char bit);
+
 //// CA COMPUTATION PROPER
+
+int add_foci();
 
 // Lookup table for 1-step of 4x4 blocks. Idea stolen from Tomas Rokicki's
 // hlife.c.
 leaf result[65536];
 
-void
-init_result();
+void init_result();
 
 block *evolve(block *x);
 
@@ -201,13 +227,9 @@ block *half_evolve(block *b, int i, int j);
 
 //// READING AND WRITING BLOCKS
 
-block *write_bit(block *b, unsigned long y, unsigned long x, char bit);
-
 block *read_life_105(FILE *f);
 
 int display_raw(block *b, FILE *f);
-
-block *blank_block(depth_t lglength);
 
 block *read_mc(FILE *f);
 

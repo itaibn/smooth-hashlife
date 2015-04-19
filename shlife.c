@@ -1,20 +1,4 @@
-#include <assert.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-// I'm planning on using bignums for coordinates to allow sizes >2^64. Note that
-// the current codebase does not support anything >2^31.
-#include <gmp.h>
-
-#ifdef DEBUG
-#define TRACE gmp_printf
-#define DEBUG 1
-#else
-#define TRACE(a, ...)
-#define DEBUG 0
-#endif // DEBUG
+#include "shlife.h"
 
 // GMP doesn't have a maximum or minimum function for mpz_t, and they'll be
 // needed later
@@ -34,67 +18,6 @@ void my_mpz_min(mpz_t rop, const mpz_t op0, const mpz_t op1) {
     }
 }
 
-//// DEFINITIONS OF TYPES
-
-struct block_struct;
-typedef struct block_struct block;
-
-// Integer type for the depth of the block-tree.
-typedef mp_bitcnt_t depth_t;
-
-// Leaf node for 4x4^H^H^H2x2 block (let's worry about efficiency later).
-// Don't change this macro; this value is hardcoded in other places.
-#define LEAFSIZE 2
-#define LGLEAFSIZE 1
-/*
-Data format is little-endian going west-to-east, north-to-south, like so:
-   N
-
-  0 1
-W     E
-  2 3
-
-   S
-*/
-typedef uint8_t leaf;
-
-// A node block recursively containing 4 smaller blocks.
-//typedef block *(node[2][2]);
-typedef struct {
-    block *corner[2][2];
-} node;
-
-#define NW(n) ((n).corner[0][0])
-#define NE(n) ((n).corner[0][1])
-#define SW(n) ((n).corner[1][0])
-#define SE(n) ((n).corner[1][1])
-#define CORNER(n, i, j) ((n).corner[i][j])
-
-typedef struct {
-    mpz_t x, y/*, t*/;
-    block *superblock;
-} subblock;
-
-// General block. May be a leaf or node.
-struct block_struct {
-    enum b_tag {
-        EMPTY = 0, // For uninitialized block entries in the hash table.
-        LEAF_B,
-        NODE_B,
-        CONTAIN_B
-    } tag;
-    union {
-        leaf b_l;
-        node b_n;
-        subblock b_c;
-    } content;
-    unsigned long hash;
-    depth_t depth;
-//    unsigned long refcount;
-    block *res;
-};
-
-#define LGLENGTH(b) ((b)->depth+LGLEAFSIZE)
 
 //// TOOLS FOR CALCULATING THE HASH FUNCTION
 // The intended hash function is as follows: Given a block b of size 2^nx2^n, it
@@ -111,24 +34,6 @@ struct block_struct {
 
 // Note: hashprime must be less than 2^31 for code to work. See comment in
 // hash_node().
-const unsigned long hashprime = 1000000007;
-mpz_t hashprime_mpz;
-const unsigned long xmul = 2331, ymul = 121212121;
-
-// {x,y}mul_cache[i] caches the value {xmul,ymul}^(LEAFSIZE*2^i), and is used
-// for computing the hash of a depth i node. Currently no support for depths
-// >=256.
-unsigned long xmul_cache[256];
-unsigned long ymul_cache[256];
-
-// A cache of the hashes of all leaf nodes.
-unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
-// A set of caches for hashes of rectangular subblocks of leaf nodes of all
-// sizes.
-size_t rectangle_hash_cache_size[LEAFSIZE * LEAFSIZE];
-unsigned long *rectangle_hash_cache[LEAFSIZE * LEAFSIZE];
-// Values xmul^i*ymul^j for 0 =< i,j < LEAFSIZE
-unsigned long point_hash_value[LEAFSIZE * LEAFSIZE];
 
 int
 init_hash_cache() {
@@ -639,9 +544,157 @@ block_index(block *b, int i, int j) {
 
 //// CA COMPUTATION PROPER
 
-// Lookup table for 1-step of 4x4 blocks. Idea stolen from Tomas Rokicki's
-// hlife.c.
-leaf result[65536];
+int
+copy_inner_pattern(inner_pattern *a, inner_pattern *b) {
+    a->depth_diff = b->depth_diff;
+    a->pattern = b->pattern;
+    mpz_init_set(a->y, b->y);
+    mpz_init_set(a->x, b->x);
+}
+
+// This code was written from scratch and not tested so surely fails badly. It
+// also could use some better organizing, I think.
+int
+add_foci(block *b) {
+    assert(b);
+    if (b->nfocus >= 0) {
+        return 0;
+    }
+
+    block *tmp;
+    struct inner_pattern foci[58008];
+    int i, j, k, count;
+    count = 0;
+
+    if (b->depth < 3) {
+        if (b->depth < 2) {
+            b->foci = NULL
+            return (b->nfocus = 0);
+        }
+
+        mpz_t iz, jz;
+        mpz_inits(iz, jz, NULL);
+        for (j=2; j<7; j++) {
+        for (i=2; i<7; i++) {
+            mpz_set_ui(jz, j-1);
+            mpz_set_ui(iz, i-1);
+            foci[count].pattern = mkblock_contain(b, iz, jz, 2);
+            foci[count].depth_diff = 2;
+            mpz_inits(foci[count].y, foci[count].x, NULL);
+            mpz_add_ui(foci[count].y, jz, 1);
+            mpz_add_ui(foci[count].x, iz, 1);
+            count++;
+        }}
+        mpz_clears(iz, jz, NULL);
+    } else if (b->tag == CONTAIN_B) {
+        mpz_t mnorth, msouth, mwest, meast, lhs, hsize;
+        mpz_inits(mnorth, msouth, meast, mwest, lhs, hsize, NULL);
+
+        mpz_set_ui(mnorth, 1);
+        mpz_mul_2exp(hsize, mnorth, LGLENGTH(b));
+        mpz_mul_2exp(mnorth, mnorth, LGLENGTH(b)-2); // Am I sure it should be 2
+        mpz_set(mwest, mnorth);                      // here?
+        mpz_sub(msouth, hsize, mnorth);
+        mpz_sub(meast, hsize, mnorth);               // PS. This is a horrible
+        mpz_add(mnorth, mnorth, b->content.b_c.y);   // way to format comments.
+        mpz_add(msouth, msouth, b->content.b_c.y);
+        mpz_add(mwest, mwest, b->content.b_c.x);
+        mpz_add(meast, meast, b->content.b_c.x);
+        mpz_tdiv_q_2exp(hsize, hsize, 1);
+
+        for (i=0; i<3; i++) {
+        for (j=0; j<3; j++) {
+            tmp = block_index(b->content.b_c.superblock, i, j);
+            if (add_foci(tmp) < 0) {return -1; /*MPZ NOT DEALLOCATED!!!*/}
+            for (k=0; k<tmp->nfocus; k++) {
+                int cond;
+                /*
+                cond = tmp->foci[k].x + i*2^lglength(b) >= b->content.b_c.x +
+                    2^(lglength(b)-2) && ...
+                */
+                mpz_mul_ui(lhs, hsize, j);
+                mpz_add(lhs, lhs, tmp->foci[k].y);
+                cond = (mpz_cmp (lhs, mnorth) >= 0) && (mpz_cmp (lhs, msouth)
+                    <= 0);
+                mpz_mul_ui(lhs, hsize, i);
+                mpz_add(lhs, lhs, tmp->foci[k].x);
+                cond = cond && (mpz_cmp (lhs, mwest) >= 0) && (mpz_cmp (lhs,
+                    meast) <= 0);
+                if (cond) {
+//                    foci[count++] = tmp->foci[k];
+                    foci[count].pattern = tmp->foci[k].pattern;
+                    foci[count].depth_diff = tmp->foci[k].depth_diff;
+                    mpz_init(foci[count].y);
+                    mpz_mul_ui(lhs, hsize, j);
+                    mpz_add(foci[count].y, tmp->foci[k].y, lhs);
+                    mpz_sub(foci[count].y, foci[count].y, b->content.b_c.y);
+                    mpz_init(foci[count].x);
+                    mpz_mul_ui(lhs, hsize, i);
+                    mpz_add(foci[count].x, tmp->foci[k].x, lhs);
+                    mpz_sub(foci[count].x, foci[count].x, b->content.b_c.x);
+                    count++;
+                }
+            }
+        }}
+        mpz_clears(mnorth, msouth, meast, mwest, lhs, hsize, NULL);
+
+        b->nfocus = count;
+        b->foci = (struct inner_pattern *) malloc(count * sizeof(struct
+            inner_pattern));
+        for (i=0; i<count; i++) {
+            b->foci[i] = foci[i];
+        }
+    } else if (b->tag == NODE_B) {
+        for (i=0; i<3; i++) {
+        for (j=0; j<3; j++) {
+            tmp = block_index(b, i, j);
+            if (tmp->nfocus < 0) {
+                if (add_foci(tmp) < 0) {
+                    return -1;
+                }
+                assert(tmp->nfocus >= 0);
+            }
+            for (k=0; k<tmp->nfocus; k++) {
+                copy_inner_pattern(&foci[count+k], &tmp->foci[k]);
+            }
+            count += k;
+        }}
+
+        for (i=0; i<count; i++) {
+            mpz_sub(TTY, foci[i].y, TTSIZE);
+            mpz_sub(TTX, foci[i].x, TTSIZE);
+            if ((mpz_sgn(TTY) >= 0) && (mpz_sgn(TTX) >= 0)) {
+                foci[i].pattern = mkblock_contain(b, TTX, TTY, 2);
+            } else {
+                foci[i] = {-1, NULL};
+            }
+        }
+
+        int cond;
+        for (i=0; i<count; i++) {
+            cond = (mpz_cmp(foci[i].y, TTLMARGIN) >= 0) && (mpz_cmp(foci[i].y,
+                TTRMARGIN) <= 0);
+            cond = cond && (mpz_cmp(foci[i].x, TTLMARGIN) >= 0) &&
+                (mpz_cmp(foci[i].x, TTRMARGIN) <= 0);
+            if (cond) {
+                for (k=0; k<count; k++) {
+                    if (k==i || foci[k]->pattern == NULL) break;
+                    mpz_sub(TTDIFFY, foci[i].y, foci[k].y);
+                    mpz_sub(TTDiFFX, foci[i].x, foci[k].x);
+                    mpz_abs(TTDIFFY, TTDIFFY);
+                    mpz_abs(TTDIFFX, TTDIFFX);
+                    if ((mpz_cmp(TTDIFFY, TTDIFFBND) <= 0) && (mpz_cmp(TTDIFFX,
+                            TTDIFFBND) <= 0)) {
+                        cond = cond && (foci[k].pattern->hash <
+                            foci[i].pattern->hash)
+                    }
+                }
+            }
+            if (!cond) {
+                
+        }
+    }
+}
 
 void
 init_result() {
@@ -703,11 +756,20 @@ half_evolve(block *b, int i, int j) {
 // Sorry, the code here is a bit messy and repetitive.
 block *
 evolve(block *x) {
+    static int nevolve = 0;
+    static int cache = 0;
+    static int success;
+    if (x->depth > 3) {
+        TRACE("evolve %d %d\n", (int) x->depth, nevolve);
+    }
+    nevolve++;
     block *r;
     if (x == NULL) {
         fprintf(stderr, "NULL input to evolve()\n");
     }
     if (x->res) {
+        TRACE("cache  %d %d\n", (int) x->depth, nevolve);
+        cache++;
         return x->res;
     }
     if (x->tag == CONTAIN_B) {
@@ -750,12 +812,20 @@ evolve(block *x) {
     } else {
         int i, j;
         node n;
+        block *test;
         assert(x->tag == NODE_B);
         for (i=0; i<2; i++) {
         for (j=0; j<2; j++) {
             CORNER(n, i, j) = evolve(half_evolve(x, i, j));
         }}
         r = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+        test = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+        if (r != test) {
+            TRACE("cache error %d %d %p | %d %d %p [%p]\n", r->index, r->hash,
+                r, test->index, test->hash, test, hashtable[test->index]);
+        } else {
+            TRACE("cache success %d\n", success);
+        }
 /*
         // Half-sized subblocks of x on the north, south, east, west, and
         // center:
@@ -799,6 +869,9 @@ evolve(block *x) {
 */
     }
     end:
+    if (x->depth > 4) {
+        TRACE("evolve %d %d %d %d\n", x->depth, nevolve, cache, success);
+    }
     return (x->res = r);
 }
 
@@ -913,21 +986,23 @@ read_mc(FILE *f) {
     int index;
     node n;
     index = 1;
-    TRACE("i %d\n", index);
+    //TRACE("i %d\n", index);
     while(index < MAXMCLINES) {
+        /*
         if (DEBUG) {
-            TRACE("previous patterns (index=%d):\n", index);
+            //TRACE("previous patterns (index=%d):\n", index);
             for (i=0; i<index; i++) {
-                TRACE("(%d)", i);
+                //TRACE("(%d)", i);
                 display_raw(blocktable[i], stderr);
             }
-            TRACE("\n");
+            //TRACE("\n");
         }
+        */
         block *current;
         c = getc(f);
         if (c == '$' || c == '*' || c == '.') {
             int x=0, y=0, bit;
-            TRACE("8x8\n");
+            //TRACE("8x8\n");
             current = blank_eight;
             while (c != '\n') {
                 switch(c) {
@@ -952,7 +1027,7 @@ read_mc(FILE *f) {
                 c = getc(f);
             }
         } else if ('0' <= c && c <= '9') {
-            TRACE("big block\n");
+            //TRACE("big block\n");
             int x[5];
             for (i=0; i<5; i++) {
                 x[i] = 0;
@@ -961,12 +1036,12 @@ read_mc(FILE *f) {
                     c = getc(f);
                 } while ('0' <= c && c <= '9');
                 if (i<4) {
-                    TRACE("verify c=%c (%d)\n", c, c);
+                    //TRACE("verify c=%c (%d)\n", c, c);
                     assert(c == ' ');
                     c = getc(f);
                     assert('0' <= c && c <= '9');
                 }
-                TRACE("numeral %d\n", x[i]);
+                //TRACE("numeral %d\n", x[i]);
             }
             if (c == '\r') {c = getc(f);}
             assert(c == '\n');
@@ -992,15 +1067,17 @@ read_mc(FILE *f) {
             SE(n) = blocktable[x[4]];
             */
 
-            TRACE("making block ");
+            //TRACE("making block ");
+            /*
             if (DEBUG) {
                 for (i=0; i<2; i++) {
                 for (j=0; j<2; j++) {
                     display(CORNER(n, i, j), stderr);
                 }}
             }
-            TRACE("\n");
-            current = mkblock_node_tr(NW(n), NE(n), SW(n), SE(n), 1);
+            */
+            //TRACE("\n");
+            current = mkblock_node_tr(NW(n), NE(n), SW(n), SE(n), 0);
             assert(current && LGLENGTH(current) == depth);
         } else if (c == EOF) {
             break;
@@ -1194,6 +1271,7 @@ display_line(block *b, mpz_t y, mpz_t x0, mpz_t x1, int newline, FILE *f) {
     return 0;
 }
 
+// Displays a block in Life 1.05 format.
 int
 display(block *b, FILE *f) {
     int ret=0;
@@ -1207,6 +1285,8 @@ display(block *b, FILE *f) {
     //TRACE("d size %d", size);
     //display_raw(b, stdout);
     //TRACE("\n");
+
+    fputs("#Life 1.05\n", f);
 
     int i;
     mpz_t y, x0, x1;
@@ -1294,8 +1374,10 @@ display(block *b, FILE *f) {
 // Note: Currently this sucks, there is no hash table resizing nor garbage
 // collection.
 
+/*
 unsigned int ht_size = 1000000;
 block **hashtable;
+*/
 
 void
 init_hashtable() {
@@ -1317,9 +1399,15 @@ new_block(unsigned long hash) {
             b->hash = hash;
             b->res = NULL;
             b->tag = EMPTY;
+            b->nfocus = -1;
+            b->foci = NULL;
+#if DEBUG
+            b->index = i;
+#endif
 //            b->refcount = 0;
             // Insert command here of the form:
             //  num_entries++;
+            hashtable[i] = b;
         }
     } while (b->hash != hash);
 //    b->refcount++;
@@ -1347,8 +1435,8 @@ main(int argc, char **argv) {
     init_hash_cache();
     init_result();
 
-    if (argc != 6) {
-        fprintf(stderr, "shlife pattern x0 x1 y0 y1\n");
+    if (argc != 7) {
+        fprintf(stderr, "shlife pattern outfile x0 x1 y0 y1\n");
         exit(1);
     }
 
@@ -1364,19 +1452,40 @@ main(int argc, char **argv) {
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
+    } else if (b->depth == 0) {
+        fprintf(stderr, "Input pattern must be larger than leaf\n");
+        // Not exiting intentionally.
     }
     fclose(f);
 
     mpz_t x[4];
     int i, j, err=0;
     for (i=0; i<4; i++) {
-        err |= mpz_init_set_str(x[i], argv[i+2], 10);
+        err |= mpz_init_set_str(x[i], argv[i+3], 10);
     }
     if (err) {
         fprintf(stderr, "Arguments x0, x1, y0, y1 must be numbers\n");
         exit(1);
     }
 
+    f = fopen(argv[2], "w");
+    if (f == NULL) {
+        fprintf(stderr, "Error opening output file\n");
+        exit(1);
+    }
+    printf("evolving\n");
+    b = evolve(b);
+    printf("done\n");
+    if (b == NULL) {
+        fprintf(stderr, "Error evolving life pattern\n");
+        exit(1);
+    }
+    display(b, f);
+    fclose(f);
+
+    exit(0);
+
+/*
     display(b, stdout);
     
     node n;
@@ -1418,4 +1527,5 @@ main(int argc, char **argv) {
     c = evolve(b);
     display(c, stdout);
     exit(0);
+*/
 }
