@@ -553,7 +553,7 @@ int
 add_foci(block *b) {
     assert(b);
     if (b->nfocus >= 0) {
-        return 0;
+        return b->nfocus;
     }
 
     block *tmp;
@@ -604,14 +604,18 @@ add_foci(block *b) {
             for (k=0; k<tmp->nfocus; k++) {
                 int cond;
                 /*
-                cond = tmp->foci[k].x + i*2^lglength(b) >= b->content.b_c.x +
-                    2^(lglength(b)-2) && ...
+                fx, fy = tmp->foci[k].{x,y} + {i,j}
+                x, y = b->content.b_c.{x,y}
+                cond = fx + j*length(b) >= x + length(b)/4
+                    && fx + j*length(b) <= x + length(b)*3/4
+                    && fy + i*length(b) >= y + length(b)/4
+                    && fy + i*length(b) <= y + length(b)*3/4
                 */
-                mpz_mul_ui(lhs, hsize, j);
+                mpz_mul_ui(lhs, hsize, i);
                 mpz_add(lhs, lhs, tmp->foci[k].y);
                 cond = (mpz_cmp (lhs, mnorth) >= 0) && (mpz_cmp (lhs, msouth)
                     <= 0);
-                mpz_mul_ui(lhs, hsize, i);
+                mpz_mul_ui(lhs, hsize, j);
                 mpz_add(lhs, lhs, tmp->foci[k].x);
                 cond = cond && (mpz_cmp (lhs, mwest) >= 0) && (mpz_cmp (lhs,
                     meast) <= 0);
