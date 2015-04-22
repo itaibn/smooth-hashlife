@@ -110,6 +110,13 @@ init_hash_cache() {
 unsigned long
 hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
         hse, depth_t d) {
+    if (d >= 256) {
+        fprintf(stderr, "This implementation currently does not supported sizes"
+            "larger than 2^257\n");
+        exit(1)
+        //return NULL;
+    }
+
     uint64_t xmul_d, ymul_d, xymul_d;
     xmul_d = xmul_cache[d];
     ymul_d = ymul_cache[d];
@@ -281,11 +288,6 @@ mkblock_node_tr(block *nw, block *ne, block *sw, block *se, int trace) {
     }
     if (trace) {TRACE("depth %d %d %d %d\n", nw->depth, ne->depth, sw->depth,
         se->depth);}
-    if (d >= 256) {
-        fprintf(stderr, "This implementation currently does not supported sizes"
-            "larger than 2^257\n");
-        return NULL;
-    }
 
     node n = {{{nw, ne}, {sw, se}}};
     hash = hash_node(nw->hash, ne->hash, sw->hash, se->hash, d);
@@ -692,6 +694,7 @@ add_foci(block *b) {
             }
             if (!cond) {
                 
+            }
         }
     }
 }
