@@ -272,7 +272,7 @@ mkblock_leaf(leaf l) {
 
 // Combine four blocks into a node block
 block *
-mkblock_node_tr(block *nw, block *ne, block *sw, block *se, int trace) {
+mkblock_node(block *nw, block *ne, block *sw, block *se) {
     unsigned long hash;
     block *b;
     depth_t d;
@@ -286,8 +286,6 @@ mkblock_node_tr(block *nw, block *ne, block *sw, block *se, int trace) {
         TRACE("bad sizes\n");
         return NULL;
     }
-    if (trace) {TRACE("depth %d %d %d %d\n", nw->depth, ne->depth, sw->depth,
-        se->depth);}
 
     node n = {{{nw, ne}, {sw, se}}};
     hash = hash_node(nw->hash, ne->hash, sw->hash, se->hash, d);
@@ -297,11 +295,6 @@ mkblock_node_tr(block *nw, block *ne, block *sw, block *se, int trace) {
     b->content.b_n = n;
     b->depth = d+1;
     return b;
-}
-
-block *
-mkblock_node(block *nw, block *ne, block *sw, block *se) {
-    return mkblock_node_tr(nw, ne, sw, se, 0);
 }
 
 block *block_index(block *b, int y, int x);
@@ -1080,7 +1073,7 @@ read_mc(FILE *f) {
             }
             */
             //TRACE("\n");
-            current = mkblock_node_tr(NW(n), NE(n), SW(n), SE(n), 0);
+            current = mkblock_node(NW(n), NE(n), SW(n), SE(n));
             assert(current && LGLENGTH(current) == depth);
         } else if (c == EOF) {
             break;
