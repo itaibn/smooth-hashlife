@@ -65,12 +65,6 @@ typedef struct {
 } subblock;
 
 struct inner_pattern;
-struct list_struct;
-
-typedef struct list_struct {
-    struct inner_pattern *elem;
-    struct list_struct *next;
-} blocklist;
 
 // General block. May be a leaf or node.
 struct block_struct {
@@ -188,7 +182,7 @@ block *mkblock_node(block *nw, block *ne, block *sw, block *se);
 block *mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff);
 
 // Given a 2^nx2^n block b, return the 2^(n-1)x2^(n-1) subblock with northwest
-// corner at (j*2^(n-2), i*2^(n-2)). For example:
+// corner at (jx*2^(n-2), iy*2^(n-2)). For example:
 //
 //      N
 //  +-+---+-+
@@ -202,7 +196,7 @@ block *mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff);
 //  +-------+
 //      S
 block *
-block_index(block *b, int i, int j);
+block_index(block *b, int iy, int jx);
 
 // Make a block with every cell dead of sidelength 2^lglength
 block *blank_block(depth_t lglength);

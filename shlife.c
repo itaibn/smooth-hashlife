@@ -437,7 +437,7 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
 }
 
 // Given a 2^nx2^n block b, return the 2^(n-1)x2^(n-1) subblock with northwest
-// corner at (j*2^(n-2), i*2^(n-2)). For example:
+// corner at (jx*2^(n-2), iy*2^(n-2)). For example:
 //
 //      N
 //  +-+---+-+
@@ -451,13 +451,13 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
 //  +-------+
 //      S
 block *
-block_index(block *b, int i, int j) {
+block_index(block *b, int iy, int jx) {
     //printf("bindex b(%lu %lu) %d %d\n", (unsigned long) b->depth, b->hash, i,
     //    j);
     //display(b, stdout);
     //printf("\n");
 
-    assert(0 <= i && i <= 2 && 0 <= j && j <= 2);
+    assert(0 <= iy && iy <= 2 && 0 <= jx && jx <= 2);
 
     if (b == NULL) {return NULL;}
     if (b->tag == LEAF_B) {return NULL;}
@@ -470,9 +470,9 @@ block_index(block *b, int i, int j) {
         mpz_inits(x, y, halfblock, shift, NULL);
         mpz_set_ui(halfblock, 1);
         mpz_mul_2exp(halfblock, halfblock, LGLENGTH(b)-2);
-        mpz_mul_ui(shift, halfblock, j);
+        mpz_mul_ui(shift, halfblock, jx);
         mpz_add(x, b->content.b_c.x, shift);
-        mpz_mul_ui(shift, halfblock, i);
+        mpz_mul_ui(shift, halfblock, iy);
         mpz_add(y, b->content.b_c.y, shift);
         res = mkblock_contain(b->content.b_c.superblock, x, y, 2);
         mpz_clears(x, y, halfblock, shift, NULL);
@@ -486,11 +486,11 @@ block_index(block *b, int i, int j) {
     assert(b->tag == NODE_B);
     node b_no = b->content.b_n;
     
-    if (((i | j) & 1) == 0) {
+    if (((iy | jx) & 1) == 0) {
         //printf("Easy corner\n");
         // This isn't just for optimization; block_index(b, i, j) where either i
         // or j is odd recursively calls the case where both i and j are even.
-        return CORNER(b_no, i/2, j/2);
+        return CORNER(b_no, iy/2, jx/2);
     } else if (b->depth == 1) {
     // The next two cases have similar structures. The block b is determined to
     // be a node. The subblock is computed by computing its (p, q)'th corner as
@@ -509,10 +509,10 @@ block_index(block *b, int i, int j) {
         res = 0;
         for (p=0; p<2; p++) {
         for (q=0; q<2; q++) {
-            i0 = ((p + i) & 2) >> 1;
-            i1 = (p + i) & 1;
-            j0 = ((q + j) & 2) >> 1;
-            j1 = (q + j) & 1;
+            i0 = ((p + iy) & 2) >> 1;
+            i1 = (p + iy) & 1;
+            j0 = ((q + jx) & 2) >> 1;
+            j1 = (q + jx) & 1;
             assert(CORNER(b_no, i0, j0)->tag == LEAF_B);
             bit = 1 & (CORNER(b_no, i0, j0)->content.b_l >> (LEAFSIZE*i1 + j1));
             res |= bit << (LEAFSIZE*p + q);
@@ -526,10 +526,10 @@ block_index(block *b, int i, int j) {
         int p, i0, i1, q, j0, j1;
         for (p=0; p<2; p++) {
         for (q=0; q<2; q++) {
-            i0 = ((p + i) & 2) >> 1;
-            i1 = (p + i) & 1;
-            j0 = ((q + j) & 2) >> 1;
-            j1 = (q + j) & 1;
+            i0 = ((p + iy) & 2) >> 1;
+            i1 = (p + iy) & 1;
+            j0 = ((q + jx) & 2) >> 1;
+            j1 = (q + jx) & 1;
             tmpb = CORNER(b_no, i0, j0);
             CORNER(n, p, q) = block_index(tmpb, 2*i1, 2*j1);
         }}
