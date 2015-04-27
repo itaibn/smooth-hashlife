@@ -670,6 +670,7 @@ add_foci(block *b) {
         }
 
         int cond;
+        k = 0;
         for (i=0; i<count; i++) {
             cond = (mpz_cmp(foci[i].y, TTLMARGIN) >= 0) && (mpz_cmp(foci[i].y,
                 TTRMARGIN) <= 0);
@@ -690,8 +691,16 @@ add_foci(block *b) {
                 }
             }
             if (!cond) {
-                
+                // Overwriting BAD BAD BAD. This code won't work.
+                copy_inner_pattern(&foci[k], &foci[i]);
+                k++;
             }
+        }
+        count = k;
+        b->nfocus = count;
+        b->foci = malloc(count * sizeof(struct inner_pattern));
+        for (k=0; k<count; k++) {
+            copy_inner_pattern(&b->foci[k], foci[k]);
         }
     }
 }
