@@ -1,4 +1,5 @@
 #include "shlife.h"
+#include "list.c"
 
 // GMP doesn't have a maximum or minimum function for mpz_t, and they'll be
 // needed later
@@ -18,6 +19,10 @@ void my_mpz_min(mpz_t rop, const mpz_t op0, const mpz_t op1) {
     }
 }
 
+void mpz_set_size_shift(mpz_t rop, block *b, int i) {
+    mpz_set_ui(rop, 1);
+    mpz_mul_2exp(rop, rop, b->size+i);
+}
 
 //// TOOLS FOR CALCULATING THE HASH FUNCTION
 // The intended hash function is as follows: Given a block b of size 2^nx2^n, it
@@ -547,6 +552,41 @@ copy_inner_pattern(inner_pattern *a, inner_pattern *b) {
     mpz_init_set(a->x, b->x);
 }
 
+// Unsure if necessary
+block *fill_inner_pattern(block *base, inner_pattern *in) {
+    return (in->pattern = mkblock_contain(base, in->x, in->y, in->depth_diff));
+}
+
+int
+is_focal(block *base, inner_pattern test, inner_pattern *compare) {
+    inner_pattern *comparand = compare;
+    mpz_t dist, maxdist;
+    mpz_inits(dist, maxdist, NULL);
+    mpz_set_size_shift(maxdist, base, -2);
+
+    while (*comparand) {
+        if (comparand->pattern->hash < test->pattern->hash) {
+            goto continue0;
+        }
+        mpz_sub(dist, comparand->x, test.x);
+        mpz_abs(dist, dist);
+        if (mpz_cmp(dist, maxdist) > 0) {
+            goto continue0;
+        }
+        mpz_sub(dist, comparand->y, test.y);
+        mpz_abs(dist, dist);
+        if (mpz_cmp(dist, maxdist) <= 0) {
+            mpz_clears(dist, maxdist, NULL);
+            return 0;
+        }
+        continnue0:
+        comparand++;
+    }
+
+    mpz_clears(dist, maxdist, NULL);
+    return 1;
+}
+
 // This code was written from scratch and not tested so surely fails badly. It
 // also could use some better organizing, I think.
 int
@@ -696,13 +736,20 @@ add_foci(block *b) {
                 k++;
             }
         }
+        /*
         count = k;
         b->nfocus = count;
         b->foci = malloc(count * sizeof(struct inner_pattern));
         for (k=0; k<count; k++) {
             copy_inner_pattern(&b->foci[k], foci[k]);
         }
+        */
     }
+        b->nfocus = count;
+        b->foci = malloc(count * sizeof(struct inner_pattern));
+        for (k=0; k<count; k++) {
+            copy_inner_pattern(&b->foci[k], foci[k]);
+        }
 }
 
 void
