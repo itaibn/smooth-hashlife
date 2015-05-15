@@ -21,7 +21,7 @@ void my_mpz_min(mpz_t rop, const mpz_t op0, const mpz_t op1) {
 
 void mpz_set_size_shift(mpz_t rop, block *b, int i) {
     mpz_set_ui(rop, 1);
-    mpz_mul_2exp(rop, rop, b->size+i);
+    mpz_mul_2exp(rop, rop, LGLENGTH(b)+i);
 }
 
 //// TOOLS FOR CALCULATING THE HASH FUNCTION
@@ -118,7 +118,7 @@ hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
     if (d >= 256) {
         fprintf(stderr, "This implementation currently does not supported sizes"
             "larger than 2^257\n");
-        exit(1)
+        exit(1);
         //return NULL;
     }
 
@@ -545,39 +545,41 @@ block_index(block *b, int iy, int jx) {
 //// CA COMPUTATION PROPER
 
 int
-copy_inner_pattern(inner_pattern *a, inner_pattern *b) {
+copy_inner_pattern(struct inner_pattern *a, struct inner_pattern *b) {
     a->depth_diff = b->depth_diff;
     a->pattern = b->pattern;
     mpz_init_set(a->y, b->y);
     mpz_init_set(a->x, b->x);
+    return 1;
 }
 
-// Unsure if necessary
-block *fill_inner_pattern(block *base, inner_pattern *in) {
+// Unsure if necessary. Currently unused.
+block *fill_inner_pattern(block *base, struct inner_pattern *in) {
     return (in->pattern = mkblock_contain(base, in->x, in->y, in->depth_diff));
 }
 
 int
-is_focal(block *base, inner_pattern test, inner_pattern *compare) {
+is_focal(block *base, struct inner_pattern test, struct inner_pattern *compare)
+        {
     mpz_t lmargin, rmargin;
     mpz_inits(lmargin, rmargin, NULL);
     mpz_set_size_shift(lmargin, base, -2);
-    if ((mpz_cmp(test->x, lmargin) < 0) || (mpz_cmp(test->y, lmargin) < 0)) {
+    if ((mpz_cmp(test.x, lmargin) < 0) || (mpz_cmp(test.y, lmargin) < 0)) {
         return 0;
     }
     mpz_set_size_shift(rmargin, base, 0);
     mpz_sub(rmargin, rmargin, lmargin);
-    if ((mpz_cmp(test->x, rmargin) > 0) || (mpz_cmp(test->y, rmargin) > 0)) {
+    if ((mpz_cmp(test.x, rmargin) > 0) || (mpz_cmp(test.y, rmargin) > 0)) {
         return 0;
     }
 
-    inner_pattern *comparand = compare;
+    struct inner_pattern *comparand = compare;
     mpz_t dist, maxdist;
     mpz_inits(dist, maxdist, NULL);
     mpz_set_size_shift(maxdist, base, -3);
 
     while (comparand->depth_diff >= 0) {
-        if (comparand->pattern->hash < test->pattern->hash) {
+        if (comparand->pattern->hash < test.pattern->hash) {
             goto continue0;
         }
         mpz_sub(dist, comparand->x, test.x);
@@ -591,7 +593,7 @@ is_focal(block *base, inner_pattern test, inner_pattern *compare) {
             mpz_clears(dist, maxdist, NULL);
             return 0;
         }
-        continnue0:
+        continue0:
         comparand++;
     }
 
@@ -616,7 +618,7 @@ add_foci(block *b) {
 
     if (b->depth < 3) {
         if (b->depth < 2) {
-            b->foci = NULL
+            b->foci = NULL;
             return (b->nfocus = 0);
         }
 
@@ -628,12 +630,19 @@ add_foci(block *b) {
             mpz_set_ui(iz, i-1);
             tmpfoci0[count].pattern = mkblock_contain(b, iz, jz, 2);
             tmpfoci0[count].depth_diff = 2;
-            mpz_inits(foci[count].y, foci[count].x, NULL);
-            mpz_add_ui(foci[count].y, jz, 1);
-            mpz_add_ui(foci[count].x, iz, 1);
+            mpz_inits(tmpfoci0[count].y, tmpfoci0[count].x, NULL);
+            mpz_add_ui(tmpfoci0[count].y, jz, 1);
+            mpz_add_ui(tmpfoci0[count].x, iz, 1);
             count++;
         }}
         mpz_clears(iz, jz, NULL);
+
+        b->nfocus = count;
+        b->foci = (struct inner_pattern *) malloc(count * sizeof(struct
+            inner_pattern));
+        for (i=0; i<count; i++) {
+            b->foci[i] = tmpfoci0[i];
+        }
     } else if (b->tag == CONTAIN_B) {
         mpz_t mnorth, msouth, mwest, meast, lhs, hsize;
         mpz_inits(mnorth, msouth, meast, mwest, lhs, hsize, NULL);
@@ -679,7 +688,7 @@ add_foci(block *b) {
                     mpz_init(tmpfoci0[count].y);
                     mpz_mul_ui(lhs, hsize, j);
                     mpz_add(tmpfoci0[count].y, tmp->foci[k].y, lhs);
-                    mpz_sub(tmpfoci0[count].y, foci[count].y, b->content.b_c.y);
+                    mpz_sub(tmpfoci0[count].y, tmpfoci0[count].y, b->content.b_c.y);
                     mpz_init(tmpfoci0[count].x);
                     mpz_mul_ui(lhs, hsize, i);
                     mpz_add(tmpfoci0[count].x, tmp->foci[k].x, lhs);
@@ -718,17 +727,20 @@ add_foci(block *b) {
 
         mpz_t focusx, focusy, bsize;
         mpz_inits(focusx, focusy, bsize, NULL);
+        mpz_set_size_shift(bsize, b, 0);
 
         for (i=0; i<count; i++) {
-            mpz_sub(TTY, tmpfoci1[i].y, TTSIZE);
-            mpz_sub(TTX, tmpfoci1[i].x, TTSIZE);
-            if ((mpz_sgn(TTY) >= 0) && (mpz_sgn(TTX) >= 0)) {
-                tmpfoci1[i].pattern = mkblock_contain(b, TTX, TTY, 2);
+            mpz_sub(focusy, tmpfoci1[i].y, bsize);
+            mpz_sub(focusx, tmpfoci1[i].x, bsize);
+            if ((mpz_sgn(focusy) >= 0) && (mpz_sgn(focusx) >= 0)) {
+                tmpfoci1[i].pattern = mkblock_contain(b, focusx, focusy, 2);
             } else {
                 //tmpfoci1[i] = {-1, NULL};
                 tmpfoci1[i].depth_diff = -1;
             }
         }
+
+        mpz_clears(focusx, focusy, bsize, NULL);
 
         altcount = 0;
         for (k=0; k<count; k++) {
@@ -738,7 +750,7 @@ add_foci(block *b) {
             }
         }
         count = altcount;
-        tmpfoci0[count]->depth_diff = -1;
+        tmpfoci0[count].depth_diff = -1;
 
         /*
         int cond;
@@ -772,8 +784,8 @@ add_foci(block *b) {
 
         altcount = 0;
         for (k=0; k<count; k++) {
-            if (is_focal(b, tmpfoci0[k], tmpfoci)) {
-                tmpfoci1[altcount] = tmpfoci[k];
+            if (is_focal(b, tmpfoci0[k], tmpfoci0)) {
+                tmpfoci1[altcount] = tmpfoci0[k];
                 altcount++;
             }
         }
@@ -782,7 +794,7 @@ add_foci(block *b) {
         b->nfocus = count;
         b->foci = malloc(count * sizeof(struct inner_pattern));
         for (k=0; k<count; k++) {
-            copy_inner_pattern(&b->foci[k], tmpfoci1[k]);
+            copy_inner_pattern(&b->foci[k], &tmpfoci1[k]);
         }
 
         mpz_clears(focusx, focusy, bsize, NULL);
@@ -794,9 +806,10 @@ add_foci(block *b) {
             copy_inner_pattern(&b->foci[k], foci[k]);
         }
         */
+    return b->nfocus;
 }
 
-void
+int
 init_result() {
     int result33[65536];
     int pos, i, bitcnt, tmp;
@@ -826,6 +839,8 @@ init_result() {
             (result33[(i&0x7770) >> 4] << 2) |
             (result33[(i&0xeee0) >> 5] << 3);
     }
+
+    return 0;
 }
 
 block *evolve(block *x);
@@ -1183,6 +1198,7 @@ read_mc(FILE *f) {
             break;
         } else {
             fprintf(stderr, "Nonsensical line in .mc");
+            exit(EXIT_FAILURE);
         }
 
         blocktable[index] = current;
@@ -1479,10 +1495,11 @@ unsigned int ht_size = 1000000;
 block **hashtable;
 */
 
-void
+int
 init_hashtable() {
     hashtable = (block **) malloc(ht_size * sizeof(block *));
     memset(hashtable, 0, ht_size * sizeof(block *));
+    return 0;
 }
 
 block *
@@ -1525,6 +1542,11 @@ unref(block *b) {
 */
 
 //// MAIN
+
+int
+initialize() {
+    return (init_hashtable() || init_hash_cache() || init_result());
+}
 
 int
 main(int argc, char **argv) {

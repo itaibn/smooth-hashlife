@@ -156,7 +156,7 @@ unsigned long hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1,
 unsigned int ht_size = 1000000;
 block **hashtable;
 
-void init_hashtable();
+int init_hashtable();
 
 block *new_block(unsigned long hash);
 
@@ -213,7 +213,7 @@ int add_foci();
 // hlife.c.
 leaf result[65536];
 
-void init_result();
+int init_result();
 
 block *evolve(block *x);
 
