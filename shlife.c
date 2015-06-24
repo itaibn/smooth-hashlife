@@ -283,12 +283,12 @@ mkblock_node(block *nw, block *ne, block *sw, block *se) {
     depth_t d;
 
     if (nw == NULL || ne == NULL || sw == NULL || se == NULL) {
-        TRACE("null case\n");
+        //TRACE("null case\n");
         return NULL;
     }
     d = nw->depth;
     if (ne->depth != d || sw->depth != d || se->depth != d) {
-        TRACE("bad sizes\n");
+        //TRACE("bad sizes\n");
         return NULL;
     }
 
@@ -308,7 +308,7 @@ block *block_index(block *b, int y, int x);
 // diff>1 (possibly on diff=2 necessary). Thus far this procedure is a mixup
 // between block creation and more complicated block processing.
 block *
-mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
+mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff, int rec) {
     //TRACE("mkc ss %d d %d x %Zd y %Zd\n", (int) LGLENGTH(superblock), diff, x,
     //    y);
     //gmp_printf("mkc s(%lu %p) x %Zd y %Zd dd %lu\n", (unsigned long)
@@ -320,6 +320,7 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     assert(mpz_sgn(y) >= 0);
     assert(diff >= 0);
     assert(diff <= superblock->depth);
+    assert(rec < 10);
 
     depth_t d;
     d = superblock->depth;
@@ -353,19 +354,25 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     mpz_clears(rjust, supersize, NULL);
 
     if (superblock->tag == CONTAIN_B) {
+        //TRACE("mkc 1\n");
         mpz_t nx, ny;
         block *res;
         mpz_init(nx); mpz_init(ny);
         mpz_add(nx, x, superblock->content.b_c.x);
         mpz_add(ny, y, superblock->content.b_c.y);
+        //TRACE("mkc 2\n");
+        //TRACE("mkc 20 %Zd %Zd\n", nx, ny);
+        assert(superblock->content.b_c.superblock);
         res = mkblock_contain(superblock->content.b_c.superblock, nx, ny,
-            diff+1);
+            diff+1, rec+1);
+        //TRACE("mkc 3\n");
         mpz_clear(nx); mpz_clear(ny);
         assert(res->depth > 0 || res->tag == LEAF_B);
         return res;
     }
     
     if (diff > 1) {
+        //TRACE("mkc 4\n");
         mpz_t tmp, nx, ny;
         block *subsuperblock, *res;
         unsigned long x_approx, y_approx;
@@ -384,9 +391,11 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
         mpz_clear(tmp);
 
         assert(x_approx < 3 && y_approx < 3);
+        //TRACE("mkc 5\n");
         subsuperblock = block_index(superblock, (int) y_approx, (int) x_approx);
         
-        res = mkblock_contain(subsuperblock, nx, ny, diff-1);
+        //TRACE("mkc 6\n");
+        res = mkblock_contain(subsuperblock, nx, ny, diff-1, rec+1);
         mpz_clear(nx); mpz_clear(ny);
         assert(res->depth > 0 || res->tag == LEAF_B);
         return res;
@@ -468,6 +477,8 @@ block_index(block *b, int iy, int jx) {
     if (b->tag == LEAF_B) {return NULL;}
 
     if (b->tag == CONTAIN_B) {
+        // Temporarily ad hoc tracing: execeution does not get here.
+        assert(0);
         //printf("CONTAIN_B\n");
         mpz_t x, y, halfblock, shift;
         block *res;
@@ -479,17 +490,20 @@ block_index(block *b, int iy, int jx) {
         mpz_add(x, b->content.b_c.x, shift);
         mpz_mul_ui(shift, halfblock, iy);
         mpz_add(y, b->content.b_c.y, shift);
-        res = mkblock_contain(b->content.b_c.superblock, x, y, 2);
+        res = mkblock_contain(b->content.b_c.superblock, x, y, 2, 0);
         mpz_clears(x, y, halfblock, shift, NULL);
         
         return res;
     } else if (b->tag != NODE_B) {
         fprintf(stderr, "Invalid tag %d for block at %p (hash %lu)\n", b->tag,
             b, b->hash);
+        exit(1);
     }
 
     assert(b->tag == NODE_B);
     node b_no = b->content.b_n;
+
+    //TRACE("bi %u(%lu) i %d j %d\n", b->depth, b->hash, iy, jx);
     
     if (((iy | jx) & 1) == 0) {
         //printf("Easy corner\n");
@@ -536,6 +550,8 @@ block_index(block *b, int iy, int jx) {
             j0 = ((q + jx) & 2) >> 1;
             j1 = (q + jx) & 1;
             tmpb = CORNER(b_no, i0, j0);
+            assert(tmpb->depth == b->depth - 1);
+            assert(((2*i1|2*j1)&1) == 0);
             CORNER(n, p, q) = block_index(tmpb, 2*i1, 2*j1);
         }}
         return mkblock_node(NW(n), NE(n), SW(n), SE(n));
@@ -555,30 +571,37 @@ copy_inner_pattern(struct inner_pattern *a, struct inner_pattern *b) {
 
 // Unsure if necessary. Currently unused.
 block *fill_inner_pattern(block *base, struct inner_pattern *in) {
-    return (in->pattern = mkblock_contain(base, in->x, in->y, in->depth_diff));
+    return (in->pattern = mkblock_contain(base, in->x, in->y, in->depth_diff, 0));
 }
 
 int
 is_focal(block *base, struct inner_pattern test, struct inner_pattern *compare)
         {
+    TRACE("[%d] Testing (%Zd, %Zd) (hash=%lu)... ", base->depth, test.x, test.y,
+        test.pattern->hash);
     mpz_t lmargin, rmargin;
     mpz_inits(lmargin, rmargin, NULL);
     mpz_set_size_shift(lmargin, base, -2);
     if ((mpz_cmp(test.x, lmargin) < 0) || (mpz_cmp(test.y, lmargin) < 0)) {
+        TRACE("No (boundary)\n");
         return 0;
     }
     mpz_set_size_shift(rmargin, base, 0);
     mpz_sub(rmargin, rmargin, lmargin);
     if ((mpz_cmp(test.x, rmargin) > 0) || (mpz_cmp(test.y, rmargin) > 0)) {
+        TRACE("No (boundary)\n");
         return 0;
     }
+    mpz_clears(lmargin, rmargin, NULL);
 
     struct inner_pattern *comparand = compare;
     mpz_t dist, maxdist;
     mpz_inits(dist, maxdist, NULL);
     mpz_set_size_shift(maxdist, base, -3);
 
+    int i=0;
     while (comparand->depth_diff >= 0) {
+        i++;
         if (comparand->pattern->hash < test.pattern->hash) {
             goto continue0;
         }
@@ -589,46 +612,263 @@ is_focal(block *base, struct inner_pattern test, struct inner_pattern *compare)
         }
         mpz_sub(dist, comparand->y, test.y);
         mpz_abs(dist, dist);
-        if (mpz_cmp(dist, maxdist) <= 0) {
-            mpz_clears(dist, maxdist, NULL);
-            return 0;
+        if (mpz_cmp(dist, maxdist) > 0) {
+            goto continue0;
         }
+        mpz_clears(dist, maxdist, NULL);
+        TRACE("No\n");
+        return 0;
+
+        // Slight modification of 'continue' since that is a keyword.
         continue0:
         comparand++;
     }
 
     mpz_clears(dist, maxdist, NULL);
+    TRACE("[i %d] Yes\n", i);
     return 1;
 }
+
+int
+add_foci_node(block *b, int rec) {
+    TRACE("[%d] afn 0\n", rec);
+    assert(b && b->depth >= 3);
+    assert(b->nfocus < 0);
+    assert(rec < 10);
+
+    mpz_t lmargin, rmargin, qsize, shiftx, shifty;//, tmpx, tmpy;
+    mpz_inits(lmargin, rmargin, qsize, shiftx, shifty, NULL);
+    mpz_set_size_shift(qsize, b, -2);
+    mpz_set_size_shift(lmargin, b, -3);
+    mpz_set_size_shift(rmargin, b, 0);
+    mpz_sub(rmargin, rmargin, lmargin);
+    //struct inner_pattern candidates[999], foci[999];
+    // Avoid a stack overflow
+    struct inner_pattern *candidates, *foci;
+    candidates = malloc(999*sizeof(struct inner_pattern));
+    foci = malloc(999*sizeof(struct inner_pattern));
+    int i, j, k, count, altcount;
+    block *index;
+
+    TRACE("afn 1\n");
+    count = 0;
+    for (i=0; i<3; i++) {
+    for (j=0; j<3; j++) {
+        TRACE("afn 10\n");
+        (mpz_mul_ui(shifty, qsize, i));
+        TRACE("afn 11\n");
+        (mpz_mul_ui(shiftx, qsize, j));
+        TRACE("afn 14 i %d j %d\n", i, j);
+        assert(b && b->depth);
+        TRACE("afn 15 [i %d j %d] sy %Zd sx %Zd d %lu\n", i, j, shifty, shiftx,
+            b->depth);
+        index = block_index(b, i, j);
+        TRACE("afn 16 id %d nf %d\n", index->depth, index->nfocus);
+
+        if (add_foci(index, rec+1) < 0) {
+            // Exit instead of returning in failure to avoid memory hole with
+            // MPZ types
+            fprintf(stderr, "add_foci() failed\n");
+            exit(EXIT_FAILURE);
+            return -1;
+        }
+
+        TRACE("afn 2\n");
+        for (k=0; k<index->nfocus; k++) {
+            if (   (i == 0 && (mpz_cmp (index->foci[k].y, lmargin) < 0))
+                || (i == 2 && (mpz_cmp (index->foci[k].y, rmargin) > 0))
+                || (j == 0 && (mpz_cmp (index->foci[k].x, lmargin) < 0))
+                || (j == 2 && (mpz_cmp (index->foci[k].x, rmargin) > 0))) {
+                continue;
+            }
+
+            mpz_init(candidates[count].x);
+            mpz_init(candidates[count].y);
+            mpz_sub(candidates[count].y, index->foci[k].y, shifty);
+            mpz_sub(candidates[count].x, index->foci[k].x, shiftx);
+            candidates[count].depth_diff = 2;
+            fill_inner_pattern(b, &candidates[count]);
+            count++;
+        }
+        TRACE("afn 3\n");
+    }}
+
+    mpz_clears(lmargin, rmargin, qsize, shiftx, shifty, NULL);
+
+    candidates[count].depth_diff = -1;
+
+    TRACE("afn 4\n");
+    altcount = 0;
+    for (k=0; k<count; k++) {
+        if (is_focal(b, candidates[count], candidates)) {
+            copy_inner_pattern(&foci[altcount], &candidates[count]);
+            altcount++;
+        }
+    }
+    for (k=0; k<count; k++) {
+        mpz_clears(candidates[k].x, candidates[k].y, NULL);
+    }
+
+    b->nfocus = altcount;
+    b->foci = malloc(b->nfocus * sizeof(struct inner_pattern *));
+    for (k=0; k<altcount; k++) {
+        copy_inner_pattern(&b->foci[k], &foci[k]);
+        mpz_clears(foci[k].x, foci[k].y);
+    }
+
+    free(candidates); free(foci);
+}
+
+/*
+int
+add_foci_node(block *b, int rec) {
+    assert(b && b->tag == NODE_B);
+    int i,j,k=0,count;
+    struct inner_pattern tmpfoci0[999], tmpfoci1[999];
+    block *tmp;
+    int altcount;
+
+    mpz_t bsize, shift;
+    mpz_inits(bsize, shift, NULL);
+    mpz_set_size_shift(bsize, b, -2);
+
+    for (i=0; i<3; i++) {
+    for (j=0; j<3; j++) {
+        tmp = block_index(b, i, j);
+        if (tmp->nfocus < 0) {
+            if (add_foci(tmp) < 0) {
+                return -1;
+            }
+            assert(tmp->nfocus >= 0);
+        }
+        for (k=0; k<tmp->nfocus; k++) {
+            copy_inner_pattern(&tmpfoci1[count+k], &tmp->foci[k]);
+
+            mpz_mul_ui(shift, bsize, i);
+            mpz_add(tmpfoci1[count+k].y, tmpfoci1[count+k].y, shift);
+            mpz_mul_ui(shift, bsize, j);
+            mpz_add(tmpfoci1[count+k].x, tmpfoci1[count+k].x, shift);
+        }
+        count += tmp->nfocus;
+    }}
+
+    mpz_t focusx, focusy;
+    mpz_inits(focusx, focusy, NULL);
+    mpz_clear(shift);
+    mpz_set_size_shift(bsize, b, -2);
+
+    for (i=0; i<count; i++) {
+        mpz_sub(focusy, tmpfoci1[i].y, bsize);
+        mpz_sub(focusx, tmpfoci1[i].x, bsize);
+        if ((mpz_sgn(focusy) >= 0) && (mpz_sgn(focusx) >= 0)) {
+            tmpfoci1[i].pattern = mkblock_contain(b, focusx, focusy, 2, 0);
+        } else {
+            //tmpfoci1[i] = {-1, NULL};
+            tmpfoci1[i].depth_diff = -1;
+        }
+    }
+
+    mpz_clears(focusx, focusy, bsize, NULL);
+
+    altcount = 0;
+    for (k=0; k<count; k++) {
+        if (tmpfoci1[k].depth_diff >= 0) {
+            TRACE("copy 1[%d] 0[%d] dd %d\n", k, altcount,
+                tmpfoci1[k].depth_diff);
+            copy_inner_pattern(&tmpfoci0[altcount], &tmpfoci1[k]);
+            altcount++;
+        }
+    }
+    count = altcount;
+    TRACE("c %d\n", count);
+    tmpfoci0[count].depth_diff = -1;
+
+    / *
+    int cond;
+    k = 0;
+    for (i=0; i<count; i++) {
+        cond = (mpz_cmp(tmpfoci0[i].y, TTLMARGIN) >= 0) &&
+            (mpz_cmp(tmpfoci0[i].y, TTRMARGIN) <= 0);
+        cond = cond && (mpz_cmp(tmpfoci0[i].x, TTLMARGIN) >= 0) &&
+            (mpz_cmp(tmpfoci0[i].x, TTRMARGIN) <= 0);
+        if (cond) {
+            for (k=0; k<count; k++) {
+                if (k==i || foci[k]->pattern == NULL) break;
+                mpz_sub(TTDIFFY, tmpfoci0[i].y, tmpfoci0[k].y);
+                mpz_sub(TTDiFFX, tmpfoci0[i].x, tmpfoci0[k].x);
+                mpz_abs(TTDIFFY, TTDIFFY);
+                mpz_abs(TTDIFFX, TTDIFFX);
+                if ((mpz_cmp(TTDIFFY, TTDIFFBND) <= 0) && (mpz_cmp(TTDIFFX,
+                        TTDIFFBND) <= 0)) {
+                    cond = cond && (tmpfoci0[k].pattern->hash <
+                        tmpfoci0[i].pattern->hash)
+                }
+            }
+        }
+        if (!cond) {
+            copy_inner_pattern(&tmpfoci1[k], &tmpfoci0[i]);
+            k++;
+        }
+    }
+    count = k;
+    * /
+
+    TRACE("%d\n", tmpfoci0[0].depth_diff);
+
+    altcount = 0;
+    for (k=0; k<count; k++) {
+        if (is_focal(b, tmpfoci0[k], &tmpfoci0)) {
+            tmpfoci1[altcount] = tmpfoci0[k];
+            altcount++;
+        }
+    }
+    count = altcount;
+
+    b->nfocus = count;
+    b->foci = malloc(count * sizeof(struct inner_pattern));
+    for (k=0; k<count; k++) {
+        copy_inner_pattern(&b->foci[k], &tmpfoci1[k]);
+    }
+
+    return b->nfocus;
+}
+*/
 
 // This code was written from scratch and not tested so surely fails badly. It
 // also could use some better organizing, I think.
 int
-add_foci(block *b) {
+add_foci(block *b, int rec) {
     assert(b);
+    TRACE("[%d] af\n", rec);
     if (b->nfocus >= 0) {
         return b->nfocus;
     }
 
-    block *tmp;
-    // TODO: Determine necessary length for tmpfoci[01]
-    struct inner_pattern tmpfoci0[999], tmpfoci1[999];
+
+    block *tmp=NULL;
+    // TODO: Determine necessary length for *tmpfoci[01]
+    //struct inner_pattern tmpfoci0[999], tmpfoci1[999];
     int i, j, k, count;
     count = 0;
 
     if (b->depth < 3) {
+        TRACE("af d<3 0\n");
         if (b->depth < 2) {
             b->foci = NULL;
             return (b->nfocus = 0);
         }
 
+        struct inner_pattern *tmpfoci0 = malloc(25 * sizeof(struct
+            inner_pattern));
         mpz_t iz, jz;
         mpz_inits(iz, jz, NULL);
         for (j=2; j<7; j++) {
         for (i=2; i<7; i++) {
             mpz_set_ui(jz, j-1);
             mpz_set_ui(iz, i-1);
-            tmpfoci0[count].pattern = mkblock_contain(b, iz, jz, 2);
+            TRACE("af d<3 l (%d,%d) 1\n", i, j);
+            tmpfoci0[count].pattern = mkblock_contain(b, iz, jz, 2, 0);
+            TRACE("af d<3 l (%d,%d) 2\n", i, j);
             tmpfoci0[count].depth_diff = 2;
             mpz_inits(tmpfoci0[count].y, tmpfoci0[count].x, NULL);
             mpz_add_ui(tmpfoci0[count].y, jz, 1);
@@ -643,7 +883,11 @@ add_foci(block *b) {
         for (i=0; i<count; i++) {
             b->foci[i] = tmpfoci0[i];
         }
+        free(tmpfoci0);
     } else if (b->tag == CONTAIN_B) {
+        // Temporarily ad hoc tracing: execeution does not get here.
+        assert(0);
+        struct inner_pattern tmpfoci0[999];
         mpz_t mnorth, msouth, mwest, meast, lhs, hsize;
         mpz_inits(mnorth, msouth, meast, mwest, lhs, hsize, NULL);
 
@@ -662,7 +906,7 @@ add_foci(block *b) {
         for (i=0; i<3; i++) {
         for (j=0; j<3; j++) {
             tmp = block_index(b->content.b_c.superblock, i, j);
-            if (add_foci(tmp) < 0) {return -1; /*MPZ NOT DEALLOCATED!!!*/}
+            if (add_foci(tmp, rec+1) < 0) {return -1; /*MPZ NOT DEALLOCATED!!!*/}
             for (k=0; k<tmp->nfocus; k++) {
                 int cond;
                 /*
@@ -707,6 +951,8 @@ add_foci(block *b) {
             b->foci[i] = tmpfoci0[i];
         }
     } else if (b->tag == NODE_B) {
+        return add_foci_node(b, rec+1);
+    /*
         int altcount;
 
         for (i=0; i<3; i++) {
@@ -727,7 +973,7 @@ add_foci(block *b) {
 
         mpz_t focusx, focusy, bsize;
         mpz_inits(focusx, focusy, bsize, NULL);
-        mpz_set_size_shift(bsize, b, 0);
+        mpz_set_size_shift(bsize, b, -2);
 
         for (i=0; i<count; i++) {
             mpz_sub(focusy, tmpfoci1[i].y, bsize);
@@ -752,7 +998,7 @@ add_foci(block *b) {
         count = altcount;
         tmpfoci0[count].depth_diff = -1;
 
-        /*
+        / *
         int cond;
         k = 0;
         for (i=0; i<count; i++) {
@@ -780,7 +1026,7 @@ add_foci(block *b) {
             }
         }
         count = k;
-        */
+        * /
 
         altcount = 0;
         for (k=0; k<count; k++) {
@@ -796,8 +1042,7 @@ add_foci(block *b) {
         for (k=0; k<count; k++) {
             copy_inner_pattern(&b->foci[k], &tmpfoci1[k]);
         }
-
-        mpz_clears(focusx, focusy, bsize, NULL);
+    */
     }
         /*
         b->nfocus = count;
@@ -883,7 +1128,7 @@ evolve(block *x) {
         fprintf(stderr, "NULL input to evolve()\n");
     }
     if (x->res) {
-        TRACE("cache  %d %d\n", (int) x->depth, nevolve);
+        //TRACE("cache  %d %d\n", (int) x->depth, nevolve);
         cache++;
         return x->res;
     }
@@ -904,7 +1149,7 @@ evolve(block *x) {
         assert(x->content.b_c.superblock->tag == NODE_B);
         new_sblock = half_evolve(x->content.b_c.superblock, (int) x_approx,
             (int) y_approx);
-        r = mkblock_contain(new_sblock, x->content.b_c.x, x->content.b_c.y, 1);
+        r = mkblock_contain(new_sblock, x->content.b_c.x, x->content.b_c.y, 1, 0);
         goto end;
     }
     if (x->tag != NODE_B) {
@@ -939,7 +1184,7 @@ evolve(block *x) {
             TRACE("cache error %d %d %p | %d %d %p [%p]\n", r->index, r->hash,
                 r, test->index, test->hash, test, hashtable[test->index]);
         } else {
-            TRACE("cache success %d\n", success);
+            //TRACE("cache success %d\n", success);
         }
 /*
         // Half-sized subblocks of x on the north, south, east, west, and
@@ -1569,8 +1814,8 @@ main(int argc, char **argv) {
         fprintf(stderr, "Error opening file\n");
         exit(1);
     }
-    //b = read_life_105(f);
-    b = read_mc(f);
+    b = read_life_105(f);
+    //b = read_mc(f);
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
@@ -1595,6 +1840,23 @@ main(int argc, char **argv) {
         fprintf(stderr, "Error opening output file\n");
         exit(1);
     }
+
+    block *b1 = block_index(b, 0, 1);
+    mpz_t three, five;
+    mpz_init(three); mpz_init(five);
+    mpz_set_ui(three, 3);
+    mpz_set_ui(five, 5);
+    mkblock_contain(b1, three, three, 2, 0);
+    
+    int n;
+    printf("Focals: %d\n", n = add_foci(b, 0));
+    display(b, stdout);
+    for (i=0; i<n; i++) {
+        struct inner_pattern in = b->foci[i];
+        gmp_printf("(%Zd, %Zd), ", in.x, in.y);
+    }
+    printf("\n");
+
     printf("evolving\n");
     b = evolve(b);
     printf("done\n");
@@ -1602,7 +1864,7 @@ main(int argc, char **argv) {
         fprintf(stderr, "Error evolving life pattern\n");
         exit(1);
     }
-    display(b, f);
+    //display(b, f);
     fclose(f);
 
     exit(0);
