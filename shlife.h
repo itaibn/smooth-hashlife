@@ -2,6 +2,7 @@
 #define H_SHLIFE
 
 #include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -180,8 +181,7 @@ block *mkblock_node(block *nw, block *ne, block *sw, block *se);
 // TODO: Seperate this into two different functions, one for diff=1, one for
 // diff>1 (possibly on diff=2 necessary). Thus far this procedure is a mixup
 // between block creation and more complicated block processing.
-block *mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff, int
-    rec);
+block *mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff);
 
 // Given a 2^nx2^n block b, return the 2^(n-1)x2^(n-1) subblock with northwest
 // corner at (jx*2^(n-2), iy*2^(n-2)). For example:
