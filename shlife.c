@@ -941,6 +941,84 @@ evolve(block *x) {
     return (x->res = r);
 }
 
+// Rough draft
+int
+intersect(block *block, struct inner_pattern other) {
+    mpz block_size, shift, north, south, west, east;
+    mpz_inits(block_size, shift, north, south, west, east);
+    mpz_set_size_shift(block_size, b, 0);
+    mpz_set_size_shift(shift, b, -other.depth_diff-1);
+    mpz_sub(north, other.y, shift);
+    mpz_add(south, other.y, shift);
+    mpz_sub(west, other.x, shift);
+    mpz_add(east, other.x, shift);
+    /*
+    if (mpz_cmp(other.y, block_size) >= 0
+     || mpz_cmp(other.x, block_size) >= 0) {
+        res = 0;
+        goto end;
+    }
+    if (mpz_cmp(
+    res = 1;
+    end:
+    */
+    int res;
+    res = (mpz_sgn(south) > 0)
+        && (mpz_sgn(east) > 0)
+        && (mpz_cmp(north, block_size) < 0)
+        && (mpz_cmp(west, block_size) < 0);
+    mpz_clears(block_size, shift, north, south, west, east);
+    return res;
+}
+
+block *
+evolve_with_hint(block *b, struct inner_pattern hint) {
+    if (b.depth < 2 || x->tag == CONTAIN_B) {return evolve(b);}
+
+    if (hint.depth_diff < 0 && (mpz_sgn(hint.x) <= 0) && (mpz_sgn(hint.y) <= 0))
+    {
+        mpz_t low_lim, b_size;
+        mpz_inits(low_lim, b_size, NULL);
+        mpz_set_size_shift(low_lim, b, -hint.depth_diff);
+        mpz_set_size_shitt(b_size, b, 0);
+        mpz_sub(low_lim, low_lim, b_size);
+        mpz_neg(low_lim, low_lim);
+        if ((mpz_cmp(low_lim, hint.x) <= 0) && (mpz_cmp(low_lim, hint.y) <= 0))
+        {
+            mpz_clears(low_lim, b_size, NULL);
+            // b is completely contained in hint.pattern
+        }
+    }
+
+    if (!intersect(b, hint)) {
+        return evolve(b);
+    }
+
+    assert(x->tag == NODE_B);
+
+    int iy, jx;
+    node n;
+    block *half_evolve;
+    inner_struct new_hint;
+    mpz_t shift, shift_mul;
+
+    mpz_inits(new_hint.x, new_hint.y, NULL);
+    new_hint.depth_diff = hint.depth_diff - 1;
+    mpz_set_size_shift(shift_mul, b, -3);
+    for (iy=0; iy<2; i++) {
+    for (jx=0; jx<2; j++) {
+        half_evolve = half_evolve_with_hint(b, iy, jx, hint);
+        mpz_mul_ui(shift, shift_mul, 1+2*iy);
+        mpz_sub(new_hint.y, hint.y, shift);
+        mpz_mul_ui(shift, shift_mul, 1+2*jx);
+        mpz_sub(new_hint.x, hint.x, shift);
+        CORNER(n, iy, jx) = evolve_with_hint(half_evolve, new_hint);
+    }}
+    mpz_clears(new_hint.x, new_hint.y, NULL);
+
+    return b->res = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+}
+
 //// READING AND WRITING BLOCKS
 
 block *write_bit(block *b, unsigned long y, unsigned long x, char bit);
