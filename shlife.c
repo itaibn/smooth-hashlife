@@ -442,6 +442,53 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     return b;
 }
 
+subblock
+make_subblock_struct(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
+    assert(diff >= 1);
+    assert(superblock && superblock.tag == NODE_B);
+
+    if (diff == 1) {
+        superblock res;
+        mpz_init_set(res.y, y);
+        mpz_init_set(res.x, x);
+        res.superblock = superblock;
+        return res;
+    }
+
+    mpz_t tmp, nx, ny;
+    block *subsuperblock, *res;
+    unsigned long x_approx, y_approx;
+    depth_t logsize = LGLENGTH(superblock);
+
+    mpz_init(tmp);
+    mpz_init(nx); mpz_init(ny);
+    mpz_tdiv_q_2exp(tmp, x, logsize-2);
+    x_approx = mpz_get_ui(tmp);
+    if (x_approx == 3) {
+        x_approx = 2;
+        mpz_set_ui(tmp, 2);
+    }
+    mpz_mul_2exp(tmp, tmp, logsize-2);
+    mpz_sub(nx, x, tmp);
+    mpz_tdiv_q_2exp(tmp, y, logsize-2);
+    y_approx = mpz_get_ui(tmp);
+    if (y_approx == 3) {
+        y_approx = 2;
+        mpz_set_ui(tmp, 2);
+    }
+    mpz_mul_2exp(tmp, tmp, logsize-2);
+    mpz_sub(ny, y, tmp);
+    mpz_clear(tmp);
+
+    assert(x_approx < 3 && y_approx < 3);
+    subsuperblock = block_index(superblock, (int) y_approx, (int) x_approx);
+    
+    res = make_subblock_struct(subsuperblock, nx, ny, diff-1);
+    mpz_clear(nx); mpz_clear(ny);
+    assert(res->depth > 0 || res->tag == LEAF_B);
+    return res;
+}
+
 // Given a 2^nx2^n block b, return the 2^(n-1)x2^(n-1) subblock with northwest
 // corner at (jx*2^(n-2), iy*2^(n-2)). For example:
 //
@@ -674,7 +721,7 @@ add_foci_node(block *b) {
 
     altcount = 0;
 
-    assert(mpz_sgn(candidates[0].x) > 0);
+//    assert(mpz_sgn(candidates[0].x) > 0);
     for (k=0; k<count; k++) {
         if (is_focal(b, candidates, k)) {
             assert(altcount < 999 && k < 999);
@@ -691,7 +738,7 @@ add_foci_node(block *b) {
     for (k=0; k<altcount; k++) {
         assert(k < b->nfocus && k < 999);
         copy_inner_pattern(&b->foci[k], &foci[k]);
-        mpz_clears(foci[k].x, foci[k].y);
+        mpz_clears(foci[k].x, foci[k].y, NULL);
     }
 
     //free(candidates); free(foci);
@@ -869,7 +916,53 @@ half_evolve(block *b, int i, int j) {
     return mkblock_node(NW(n), NE(n), SW(n), SE(n));
 }
 
-// Sorry, the code here is a bit messy and repetitive.
+block *evolve_subblock(subblock sb) {
+    /*
+    mpz_t tmp, newx, newy;
+    block *new_sblock;
+    int x_approx, y_approx;
+    depth_t lglen = LGLENGTH(sb.superblock)-1;
+
+    mpz_inits(tmp, newx, newy);
+    mpz_tdiv_q_2exp(tmp, sb.x, lglen);
+    x_approx = (int) mpz_get_ui(tmp);
+    mpz_mul_2exp(tmp, tmp, lglen);
+    mpz_tdiv_q_2exp(tmp, sb.y, lglen);
+    y_approx = (int) mpz_get_ui(tmp);
+    mpz_clears(tmp, newx, newy);
+
+    assert((x_approx | y_approx) < 2);
+    */
+    block *res;
+    mpz_t newy, newx, threshold;
+    int ix, jy;
+    mpz_inits(newy, newx, threshold, NULL);
+    mpz_set_size_shift(threshold, sb.superblock, -2);
+
+    if (mpz_cmp(sb.y, threshold) > 0) {
+        mpz_sub(newy, sb.y, threshold);
+        jy = 1;
+    } else {
+        mpz_set(newy, sb.y);
+        jy = 0;
+    }
+    if (mpz_cmp(sb.x, threshold) > 0) {
+        mpz_sub(newx, sb.x, threshold);
+        ix = 1;
+    } else {
+        mpz_set(newx, sb.x);
+        ix = 0;
+    }
+
+    assert(sb.superblock->tag == NODE_B);
+    new_sblock = half_evolve(sb.superblock, ix, jy);
+    res = mkblock_contain(new_sblock, newx, newy, 1);
+    mpz_clears(newy, newx, threshold, NULL);
+    return res;
+}
+
+block *evolve_with_hint(block *b, struct inner_pattern hint);
+
 block *
 evolve(block *x) {
     static int nevolve = 0;
@@ -887,6 +980,10 @@ evolve(block *x) {
         return x->res;
     }
     if (x->tag == CONTAIN_B) {
+        r = evolve_subblock(x->content.b_c);
+        goto end;
+// HOW THE HECK DID THIS EVER WORK IN THE FIRST PLACE?!?!?!
+/*
         mpz_t tmp;
         block *new_sblock;
         unsigned long x_approx, y_approx;
@@ -905,6 +1002,7 @@ evolve(block *x) {
             (int) y_approx);
         r = mkblock_contain(new_sblock, x->content.b_c.x, x->content.b_c.y, 1);
         goto end;
+*/
     }
     if (x->tag != NODE_B) {
         fprintf(stderr, "Only nodes have evolve() implemented\n");
@@ -924,9 +1022,12 @@ evolve(block *x) {
                        ((SE(n)->content.b_l & 12) << 12);
         r = mkblock_leaf(result[unpack_x]);
     } else {
+        if (add_foci(x) > 0) {
+            return evolve_with_hint(x, x->foci[0]);
+        }
+
         int i, j;
         node n;
-        block *test;
         assert(x->tag == NODE_B);
         for (i=0; i<2; i++) {
         for (j=0; j<2; j++) {
@@ -944,10 +1045,10 @@ evolve(block *x) {
 // Rough draft
 int
 intersect(block *block, struct inner_pattern other) {
-    mpz block_size, shift, north, south, west, east;
-    mpz_inits(block_size, shift, north, south, west, east);
-    mpz_set_size_shift(block_size, b, 0);
-    mpz_set_size_shift(shift, b, -other.depth_diff-1);
+    mpz_t block_size, shift, north, south, west, east;
+    mpz_inits(block_size, shift, north, south, west, east, NULL);
+    mpz_set_size_shift(block_size, block, 0);
+    mpz_set_size_shift(shift, block, -other.depth_diff-1);
     mpz_sub(north, other.y, shift);
     mpz_add(south, other.y, shift);
     mpz_sub(west, other.x, shift);
@@ -967,26 +1068,32 @@ intersect(block *block, struct inner_pattern other) {
         && (mpz_sgn(east) > 0)
         && (mpz_cmp(north, block_size) < 0)
         && (mpz_cmp(west, block_size) < 0);
-    mpz_clears(block_size, shift, north, south, west, east);
+    mpz_clears(block_size, shift, north, south, west, east, NULL);
     return res;
 }
 
+block *half_evolve_with_hint(block *b, int iy, int jx, struct inner_pattern
+    hint);
+
 block *
 evolve_with_hint(block *b, struct inner_pattern hint) {
-    if (b.depth < 2 || x->tag == CONTAIN_B) {return evolve(b);}
+    if (b->depth < 2 || b->tag == CONTAIN_B) {return evolve(b);}
 
     if (hint.depth_diff < 0 && (mpz_sgn(hint.x) <= 0) && (mpz_sgn(hint.y) <= 0))
     {
         mpz_t low_lim, b_size;
         mpz_inits(low_lim, b_size, NULL);
         mpz_set_size_shift(low_lim, b, -hint.depth_diff);
-        mpz_set_size_shitt(b_size, b, 0);
+        mpz_set_size_shift(b_size, b, 0);
         mpz_sub(low_lim, low_lim, b_size);
         mpz_neg(low_lim, low_lim);
         if ((mpz_cmp(low_lim, hint.x) <= 0) && (mpz_cmp(low_lim, hint.y) <= 0))
         {
             mpz_clears(low_lim, b_size, NULL);
             // b is completely contained in hint.pattern
+            subblock sb = make_subblock_struct(hint->pattern, hint->x, hint->y,
+                -hint->depth_diff);
+            return b->res = evolve_subblock(sb);
         }
     }
 
@@ -994,19 +1101,19 @@ evolve_with_hint(block *b, struct inner_pattern hint) {
         return evolve(b);
     }
 
-    assert(x->tag == NODE_B);
+    assert(b->tag == NODE_B);
 
     int iy, jx;
     node n;
     block *half_evolve;
-    inner_struct new_hint;
+    struct inner_pattern new_hint;
     mpz_t shift, shift_mul;
 
-    mpz_inits(new_hint.x, new_hint.y, NULL);
+    mpz_inits(new_hint.x, new_hint.y, shift, shift_mul, NULL);
     new_hint.depth_diff = hint.depth_diff - 1;
     mpz_set_size_shift(shift_mul, b, -3);
-    for (iy=0; iy<2; i++) {
-    for (jx=0; jx<2; j++) {
+    for (iy=0; iy<2; iy++) {
+    for (jx=0; jx<2; jx++) {
         half_evolve = half_evolve_with_hint(b, iy, jx, hint);
         mpz_mul_ui(shift, shift_mul, 1+2*iy);
         mpz_sub(new_hint.y, hint.y, shift);
@@ -1014,9 +1121,28 @@ evolve_with_hint(block *b, struct inner_pattern hint) {
         mpz_sub(new_hint.x, hint.x, shift);
         CORNER(n, iy, jx) = evolve_with_hint(half_evolve, new_hint);
     }}
-    mpz_clears(new_hint.x, new_hint.y, NULL);
+    mpz_clears(new_hint.x, new_hint.y, shift, shift_mul, NULL);
 
     return b->res = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+}
+
+block *
+half_evolve_with_hint(block *b, int iy, int jx, struct inner_pattern hint) {
+    assert(b);
+    assert(0 <= iy && iy < 2 && 0 <= jx && jx < 2);
+
+    node n;
+    block *tmp;
+    int x,y;
+
+    for (x=0; x<2; x++) {
+    for (y=0; y<2; y++) {
+        tmp = evolve_with_hint(block_index(b, iy+x, jx+y), hint);
+        assert(tmp != NULL);
+        CORNER(n, x, y) = tmp;
+    }}
+
+    return mkblock_node(NW(n), NE(n), SW(n), SE(n));
 }
 
 //// READING AND WRITING BLOCKS
@@ -1482,6 +1608,40 @@ initialize() {
 }
 
 int
+main(int argc, char** argv) {
+    init_hashtable();
+    init_hash_cache();
+    init_result();
+
+    if (argc != 3) {
+        fprintf(stderr, "shlife pattern.mc out.lif\n");
+        exit(1);
+    }
+
+    FILE *f;
+    block *b;
+    f = fopen(argv[1], "r");
+    if (f == NULL) {
+        fprintf(stderr, "Error opening file\n");
+        exit(1);
+    }
+    b = read_mc(f);
+    if (b == NULL) {
+        fprintf(stderr, "Badly formatted input\n");
+        exit(1);
+    } else if (b->depth == 0) {
+        fprintf(stderr, "Input pattern must be larger than leaf\n");
+        exit(1);
+    }
+    close(f);
+
+    f = fopen(argv[2], "w");
+    display(evolve(b), f);
+    close(f);
+}
+
+/*
+int
 main(int argc, char **argv) {
     //TRACE("EMPTY %d LEAF_B %d NODE_B %d CONTAIN_B %d\n", EMPTY, LEAF_B, NODE_B,
     //    CONTAIN_B);
@@ -1573,3 +1733,4 @@ main(int argc, char **argv) {
 
     exit(0);
 }
+*/
