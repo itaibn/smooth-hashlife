@@ -445,10 +445,10 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
 subblock
 make_subblock_struct(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     assert(diff >= 1);
-    assert(superblock && superblock.tag == NODE_B);
+    assert(superblock && superblock->tag == NODE_B);
 
     if (diff == 1) {
-        superblock res;
+        subblock res;
         mpz_init_set(res.y, y);
         mpz_init_set(res.x, x);
         res.superblock = superblock;
@@ -456,7 +456,7 @@ make_subblock_struct(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     }
 
     mpz_t tmp, nx, ny;
-    block *subsuperblock, *res;
+    block *subsuperblock;
     unsigned long x_approx, y_approx;
     depth_t logsize = LGLENGTH(superblock);
 
@@ -483,9 +483,9 @@ make_subblock_struct(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
     assert(x_approx < 3 && y_approx < 3);
     subsuperblock = block_index(superblock, (int) y_approx, (int) x_approx);
     
+    subblock res;
     res = make_subblock_struct(subsuperblock, nx, ny, diff-1);
     mpz_clear(nx); mpz_clear(ny);
-    assert(res->depth > 0 || res->tag == LEAF_B);
     return res;
 }
 
@@ -596,9 +596,16 @@ copy_inner_pattern(struct inner_pattern *a, struct inner_pattern *b) {
     return 1;
 }
 
-// Unsure if necessary. Currently unused.
-block *fill_inner_pattern(block *base, struct inner_pattern *in) {
-    return (in->pattern = mkblock_contain(base, in->x, in->y, in->depth_diff));
+// Unsure if necessary. Currently unused. [Now used for evolve_with_hint]
+block *fill_inner_pattern(block *base, struct inner_pattern *in) {  
+    mpz_t north, west, adj;
+    mpz_inits(north, west, adj, NULL);
+    mpz_set_size_shift(adj, base, -in->depth_diff-1);
+    mpz_sub(north, in->y, adj);
+    mpz_sub(west, in->x, adj);
+    in->pattern = mkblock_contain(base, west, north, in->depth_diff);
+    mpz_clears(north, west, adj, NULL);
+    return in->pattern;
 }
 
 int
@@ -933,7 +940,7 @@ block *evolve_subblock(subblock sb) {
 
     assert((x_approx | y_approx) < 2);
     */
-    block *res;
+    block *res, *new_sblock;
     mpz_t newy, newx, threshold;
     int ix, jy;
     mpz_inits(newy, newx, threshold, NULL);
@@ -1091,8 +1098,9 @@ evolve_with_hint(block *b, struct inner_pattern hint) {
         {
             mpz_clears(low_lim, b_size, NULL);
             // b is completely contained in hint.pattern
-            subblock sb = make_subblock_struct(hint->pattern, hint->x, hint->y,
-                -hint->depth_diff);
+            TRACE("Found subblock %d\n", (int) b->depth);
+            subblock sb = make_subblock_struct(hint.pattern, hint.x, hint.y,
+                -hint.depth_diff);
             return b->res = evolve_subblock(sb);
         }
     }
@@ -1106,24 +1114,32 @@ evolve_with_hint(block *b, struct inner_pattern hint) {
     int iy, jx;
     node n;
     block *half_evolve;
-    struct inner_pattern new_hint;
-    mpz_t shift, shift_mul;
-
+    //struct inner_pattern new_hint;
+    //mpz_t shift, shift_mul;
+    
+    /*
     mpz_inits(new_hint.x, new_hint.y, shift, shift_mul, NULL);
     new_hint.depth_diff = hint.depth_diff - 1;
+    new_hint.pattern = hint.pattern;
     mpz_set_size_shift(shift_mul, b, -3);
+    */
     for (iy=0; iy<2; iy++) {
     for (jx=0; jx<2; jx++) {
         half_evolve = half_evolve_with_hint(b, iy, jx, hint);
+        assert(half_evolve->depth == b->depth - 1);
+        /*
         mpz_mul_ui(shift, shift_mul, 1+2*iy);
         mpz_sub(new_hint.y, hint.y, shift);
         mpz_mul_ui(shift, shift_mul, 1+2*jx);
         mpz_sub(new_hint.x, hint.x, shift);
-        CORNER(n, iy, jx) = evolve_with_hint(half_evolve, new_hint);
+        */
+        CORNER(n, iy, jx) = evolve(half_evolve);
     }}
-    mpz_clears(new_hint.x, new_hint.y, shift, shift_mul, NULL);
+    //mpz_clears(new_hint.x, new_hint.y, shift, shift_mul, NULL);
 
-    return b->res = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+    b->res = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+    assert(b->res->depth == b->depth-1);
+    return b->res;
 }
 
 block *
@@ -1137,12 +1153,15 @@ half_evolve_with_hint(block *b, int iy, int jx, struct inner_pattern hint) {
 
     for (x=0; x<2; x++) {
     for (y=0; y<2; y++) {
+        // ??? This shouldn't work !!!
         tmp = evolve_with_hint(block_index(b, iy+x, jx+y), hint);
-        assert(tmp != NULL);
+        assert(tmp != NULL && tmp->depth == b->depth-2);
         CORNER(n, x, y) = tmp;
     }}
 
-    return mkblock_node(NW(n), NE(n), SW(n), SE(n));
+    block *res = mkblock_node(NW(n), NE(n), SW(n), SE(n));
+    assert(res->depth == b->depth-1);
+    return res;
 }
 
 //// READING AND WRITING BLOCKS
