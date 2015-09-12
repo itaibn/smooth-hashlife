@@ -31,6 +31,8 @@ block **hashtable;
 
 // Integer type for the depth of the block-tree.
 typedef mp_bitcnt_t depth_t;
+// Integer type for hashing
+typedef uint64_t hash_t;
 
 // Leaf node for 4x4^H^H^H2x2 block (let's worry about efficiency later).
 // Don't change this macro; this value is hardcoded in other places.
@@ -81,7 +83,7 @@ struct block_struct {
         node b_n;
         subblock b_c;
     } content;
-    unsigned long hash;
+    hash_t hash;
     depth_t depth;
 //    unsigned long refcount;
     block *res;
@@ -116,40 +118,41 @@ struct inner_pattern {
 // Note: hashprime must be less than 2^31 for code to work. See comment in
 // hash_node().
 
-const unsigned long hashprime = 1000000007;
+//const unsigned long hashprime = 1000000007;
+const hash_t hashprime = 1000000007;
 mpz_t hashprime_mpz;
-const unsigned long xmul = 2331, ymul = 121212121;
+//const unsigned long xmul = 2331, ymul = 121212121;
+const hash_t xmul = 2331, ymul = 121212121;
 
 // {x,y}mul_cache[i] caches the value {xmul,ymul}^(LEAFSIZE*2^i), and is used
 // for computing the hash of a depth i node. Currently no support for depths
 // >=256.
-unsigned long xmul_cache[256];
-unsigned long ymul_cache[256];
+hash_t xmul_cache[256];
+hash_t ymul_cache[256];
 
 // A cache of the hashes of all leaf nodes.
-unsigned long leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
+hash_t leaf_hash_cache[1 << (LEAFSIZE*LEAFSIZE)];
 // A set of caches for hashes of rectangular subblocks of leaf nodes of all
 // sizes.
 size_t rectangle_hash_cache_size[LEAFSIZE * LEAFSIZE];
-unsigned long *rectangle_hash_cache[LEAFSIZE * LEAFSIZE];
+hash_t *rectangle_hash_cache[LEAFSIZE * LEAFSIZE];
 // Values xmul^i*ymul^j for 0 =< i,j < LEAFSIZE
-unsigned long point_hash_value[LEAFSIZE * LEAFSIZE];
+hash_t point_hash_value[LEAFSIZE * LEAFSIZE];
 
 // Initialize all the caches defined above
 int init_hash_cache();
 
 // Given the hashes of all the corners of a node, and the depth of these
 // corners, calculate the hash of the whole node.
-unsigned long hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw,
-    unsigned long hse, depth_t d);
+hash_t hash_node(hash_t hnw, hash_t hne, hash_t hsw, hash_t hse, depth_t d);
 
 // Here comes the most complicated function among the hashing utilities.
 // Compute the hash of a rectangular subblock with northwest corner (x0, y0) and
 // southeast corner (x1, y1). The rectangle is truncated if either (x0, y0) or
 // (x1, y1) extend past the ends of base. If the parameter 'adjust' is set
 // nonzero, the hash is calculated as if (x0, y0) is the origin.
-unsigned long hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1,
-    const mpz_t iy0, const mpz_t iy1, int adjust);
+hash_t hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t
+    iy0, const mpz_t iy1, int adjust);
 
 //// HASH TABLE-RELATED FUNCTIONS
 // Note: Currently this sucks, there is no hash table resizing nor garbage
@@ -160,8 +163,6 @@ block **hashtable;
 
 int init_hashtable();
 
-block *new_block(unsigned long hash);
-
 /*
 // Decrease the refrence count of a block.
 int unref(block *b);
@@ -170,7 +171,7 @@ int unref(block *b);
 //// BASIC BLOCK CREATION FUNCTIONS
 
 // Allocate a block with a given hash from the hash table
-block *new_block(unsigned long hash);
+block *new_block(hash_t hash);
 
 // Make a block out of a leaf
 block *mkblock_leaf(leaf l);

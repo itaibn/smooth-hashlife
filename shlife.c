@@ -44,7 +44,7 @@ int
 init_hash_cache() {
     int i, j, x, y;
     int p, tmp;
-    unsigned long yhash, xyhash, hash;
+    hash_t yhash, xyhash, hash;
 
     mpz_init_set_ui(hashprime_mpz, hashprime);
 
@@ -71,11 +71,11 @@ init_hash_cache() {
     }
 
     int size;
-    unsigned long *table, point_value;
+    hash_t *table, point_value;
     for (x=1; x<=LEAFSIZE; x++) {
     for (y=1; y<=LEAFSIZE; y++) {
         size = 1 << (x*y);
-        table = (unsigned long *) malloc(size * sizeof(unsigned long));
+        table = (hash_t *) malloc(size * sizeof(hash_t));
         for (p=0; p < size; p++) {
             hash = 0;
             for (i=0; i<x; i++) {
@@ -112,8 +112,8 @@ init_hash_cache() {
 }
 
 // Note: d is the depth of the subnodes, not the combined node.
-unsigned long
-hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
+hash_t
+hash_node(hash_t hnw, hash_t hne, hash_t hsw, hash_t
         hse, depth_t d) {
     if (d >= 256) {
         fprintf(stderr, "This implementation currently does not supported sizes"
@@ -136,11 +136,11 @@ hash_node(unsigned long hnw, unsigned long hne, unsigned long hsw, unsigned long
 // southeast corner (x1, y1). The rectangle is truncated if either (x0, y0) or
 // (x1, y1) extend past the ends of base. If the parameter 'adjust' is set
 // nonzero, the hash is calculated as if (x0, y0) is the origin.
-unsigned long
+hash_t
 hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     const mpz_t iy1, int adjust) {
 
-    unsigned long hash;
+    hash_t hash;
     mpz_t tmp, blocksize, zero, x0, x1, y0, y1;
 
     mpz_init_set_ui(zero, 0);
@@ -163,9 +163,9 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     }
 
     if (base->tag == LEAF_B) {
-        unsigned long x0l, x1l, y0l, y1l;
+        hash_t x0l, x1l, y0l, y1l;
         size_t size;
-        unsigned long *table;
+        hash_t *table;
         leaf xmask, mask, pos, row, rect;
         int i;
         x0l = mpz_get_ui(x0);
@@ -211,7 +211,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         mpz_neg(tmp, y0);
         mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
         xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
-        hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
+        hash = (hash_t) ((xy_adj * (uint64_t) hash) % hashprime);
 
         mpz_clears(superx0, superx1, supery0, supery1, NULL);
         goto end;
@@ -220,7 +220,7 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
     assert(base->tag == NODE_B);
 
     node n = base->content.b_n;
-    unsigned long hnw, hne, hsw, hse; 
+    hash_t hnw, hne, hsw, hse; 
     mpz_t halfblock;
 
     mpz_t shiftx0, shiftx1, shifty0, shifty1;
@@ -249,7 +249,7 @@ end:
         mpz_neg(tmp, y0);
         mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
         xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
-        hash = (unsigned long) ((xy_adj * (uint64_t) hash) % hashprime);
+        hash = (hash_t) ((xy_adj * (uint64_t) hash) % hashprime);
         mpz_clears(x_adj, y_adj, NULL);
     }
     mpz_clears(tmp, blocksize, zero, x0, x1, y0, y1, NULL);
@@ -259,13 +259,16 @@ end:
 //// BASIC BLOCK CREATION FUNCTIONS
 
 // Allocate a block with a given hash from the hash table
-block * new_block(unsigned long hash);
+block * new_block(hash_t hash);
 
 block *
 mkblock_leaf(leaf l) {
-    unsigned long hash = leaf_hash_cache[l];
+    hash_t hash = leaf_hash_cache[l];
     block *b = new_block(hash);
-    if (b->tag != EMPTY) {return b;}
+    if (b->tag != EMPTY) {
+        assert(b->tag == LEAF_B);
+        return b;
+    }
     b->tag = LEAF_B;
     b->content.b_l = l;
     b->depth = 0;
@@ -275,23 +278,29 @@ mkblock_leaf(leaf l) {
 // Combine four blocks into a node block
 block *
 mkblock_node(block *nw, block *ne, block *sw, block *se) {
-    unsigned long hash;
+    hash_t hash;
     block *b;
     depth_t d;
 
     if (nw == NULL || ne == NULL || sw == NULL || se == NULL) {
+        assert(0);
         return NULL;
     }
     d = nw->depth;
     if (ne->depth != d || sw->depth != d || se->depth != d) {
+        assert(0);
         return NULL;
     }
 
     node n = {{{nw, ne}, {sw, se}}};
     hash = hash_node(nw->hash, ne->hash, sw->hash, se->hash, d);
     b = new_block(hash);
-    if (b->tag == NODE_B) {return b;}
+    if (b->tag == NODE_B) {
+        assert(b->depth == d+1);
+        return b;
+    }
     if (b->tag == CONTAIN_B) {
+        assert(b->depth == d+1);
         if (b->content.b_c.as_node != NULL) {
             return b->content.b_c.as_node;
         } else {
@@ -409,7 +418,7 @@ mkblock_contain(block *superblock, mpz_t x, mpz_t y, depth_t diff) {
         return block_index(superblock, (int) xi, (int) yi);
     }
 
-    unsigned long hash;
+    hash_t hash;
     mpz_t size, x_east, y_south;
     block *b;
 
@@ -1581,8 +1590,8 @@ init_hashtable() {
 }
 
 block *
-new_block(unsigned long hash) {
-    unsigned long ii = 0;
+new_block(hash_t hash) {
+    hash_t ii = 0;
     int i;
     block *b;
     do {
