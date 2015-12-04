@@ -24,6 +24,38 @@ void mpz_set_size_shift(mpz_t rop, block *b, int i) {
     mpz_mul_2exp(rop, rop, LGLENGTH(b)+i);
 }
 
+// Two function maybe useful for mulmod
+
+void my_mpz_set_hash(mpz_t rop, const hash_t h) {
+    assert (sizeof (hash_t) <= 2 * sizeof (unsigned long));
+    mpz_t tmp;
+    mpz_init(tmp);
+    mpz_set_ui(tmp, h >> 32);
+    mpz_mul_2exp(rop, tmp, 32);
+    mpz_set_ui(tmp, h & (((hash_t) 1>>32)-1));
+    mpz_ior(rop, rop, tmp);
+    mpz_clear(tmp);
+}
+
+hash_t my_mpz_get_hash(mpz_t op) {
+    assert (sizeof (hash_t) <= 2 * sizeof (unsigned long));
+    assert (mpz_sgn(op) >= 0);
+    hash_t low, high;
+    mpz_t tmp;
+    mpz_init(tmp);
+    // mpz_get_ui is documented to return least significant bits of a unsigned
+    // value to big to fit.
+    low = mpz_get_ui(op) & ((1>>32)-1);
+    mpz_tdiv_q_2exp(tmp, op, 32);
+    high = mpz_get_ui(tmp);
+#ifdef DEBUG
+    mpz_tdiv_q_2exp(tmp, tmp, 32);
+    assert(mpz_sgn(tmp) == 0);
+#endif
+    mpz_clear(tmp);
+    return (high << 32) | low;
+} 
+
 //// TOOLS FOR CALCULATING THE HASH FUNCTION
 // The intended hash function is as follows: Given a block b of size 2^nx2^n, it
 // sums modulo hashprime for all 0 =< i,j < 2^n the value xmul^i*ymul^j if the
@@ -39,6 +71,36 @@ void mpz_set_size_shift(mpz_t rop, block *b, int i) {
 
 // Note: hashprime must be less than 2^31 for code to work. See comment in
 // hash_node().
+
+// A method for modular multiplication to increase the possible modulo size.
+// With this fully incorporated hashprime may be anything less than 2^45.
+hash_t mulmod(hash_t a, hash_t b, hash_t m) {
+/*
+    assert (m < (hash_t) 1 << 45);
+    hash_t alow, blow, ahigh, bhigh, res;
+    alow = a & ((1<<30)-1);
+    blow = b & ((1<<30)-1);
+    ahigh = a >> 30;
+    bhigh = b >> 30;
+    res = 0;
+    res += (alow * blow) % m;
+res += (((ahigh * blow) % m) << 30) % m;
+res += (((alow * bhigh) % m) << 30) % m;
+    res += (((ahigh * bhigh) % m) * (((hash_t) 1 << 60) % m)) % m;
+    return (res % m);
+*/
+    mpz_t az, bz, mz, resz;
+    hash_t res;
+    mpz_inits(az, bz, mz, resz, NULL);
+    my_mpz_set_hash(az, a);
+    my_mpz_set_hash(bz, b);
+    my_mpz_set_hash(mz, m);
+    mpz_mul(resz, az, bz);
+    mpz_tdiv_r(resz, resz, mz);
+    res = my_mpz_get_hash(resz);
+    mpz_clears(az, bz, mz, resz, NULL);
+    return res;
+}
 
 int
 init_hash_cache() {
