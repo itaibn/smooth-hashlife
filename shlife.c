@@ -115,9 +115,9 @@ init_hash_cache() {
         xyhash = yhash;
         for (x=0; x<LEAFSIZE; x++) {
             point_hash_value[y*LEAFSIZE + x] = xyhash;
-            xyhash = xyhash * xmul % hashprime;
+            xyhash = mulmod(xyhash, xmul, hashprime);
         }
-        yhash = yhash * ymul % hashprime;
+        yhash = mulmod(yhash, ymul, hashprime);
     }
 
     for (p=0; p < 1 << (LEAFSIZE*LEAFSIZE); p++) {
@@ -134,15 +134,15 @@ init_hash_cache() {
 
     int size;
     hash_t *table, point_value;
-    for (x=1; x<=LEAFSIZE; x++) {
     for (y=1; y<=LEAFSIZE; y++) {
+    for (x=1; x<=LEAFSIZE; x++) {
         size = 1 << (x*y);
         table = (hash_t *) malloc(size * sizeof(hash_t));
         for (p=0; p < size; p++) {
             hash = 0;
-            for (i=0; i<x; i++) {
             for (j=0; j<y; j++) {
-                point_value = point_hash_value[i + LEAFSIZE*j];
+            for (i=0; i<x; i++) {
+                point_value = point_hash_value[LEAFSIZE*j + i];
                 if (p & (1 << (i+x*j))) {
                     hash = (hash + 2*point_value) % hashprime;
                 } else {
@@ -158,16 +158,16 @@ init_hash_cache() {
     }
     }
 
-    hash = point_hash_value[LEAFSIZE-1] * xmul % hashprime;
+    hash = mulmod(point_hash_value[LEAFSIZE-1], xmul, hashprime);
     for (i=0; i < 256; i++) {
         xmul_cache[i] = hash;
-        hash = hash * hash % hashprime;
+        hash = mulmod(hash, hash, hashprime);
     }
 
-    hash = point_hash_value[LEAFSIZE*(LEAFSIZE-1)] * ymul % hashprime;
+    hash = mulmod(point_hash_value[LEAFSIZE*(LEAFSIZE-1)], ymul, hashprime);
     for (i=0; i<256; i++) {
         ymul_cache[i] = hash;
-        hash = hash * hash % hashprime;
+        hash = mulmod(hash, hash, hashprime);
     }
 
     return 0;
@@ -185,12 +185,21 @@ hash_node(hash_t hnw, hash_t hne, hash_t hsw, hash_t
     }
 
     uint64_t xmul_d, ymul_d, xymul_d;
+    hash_t hne_adj, hsw_adj, hse_adj;
     xmul_d = xmul_cache[d];
+    hne_adj = mulmod(hne, xmul_d, hashprime);
     ymul_d = ymul_cache[d];
-    xymul_d = xmul_d * ymul_d % hashprime;
+    hsw_adj = mulmod(hsw, ymul_d, hashprime);
+    xymul_d = mulmod(xmul_d, ymul_d, hashprime);
+    hse_adj = mulmod(hse, xymul_d, hashprime);
+    // OLD DOC:
     // Since hashprime is less than 2^31, all the terms in the sum are less than
     // 2^62, guaranteeing that there is no overflow.
-    return (hnw + xmul_d*hne + ymul_d*hsw + xymul_d*hse) % hashprime;
+    //
+    // UPDATE: 
+    // With the current code hashprime must be less than 2^62 to ensure no
+    // overflow.
+    return (hnw + hne_adj + hsw_adj + hse_adj) % hashprime;
 }
 
 // Here comes the most complicated function among the hashing utilities.
@@ -249,7 +258,8 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         assert(rect < 1<<((x1l-x0l)*(y1l-y0l)));
         assert(rect < size);
         assert(size == 1<<((x1l-x0l)*(y1l-y0l)));
-        hash = point_hash_value[x0l + LEAFSIZE*y0l] * table[rect] % hashprime;
+        hash = mulmod(point_hash_value[x0l + LEAFSIZE*y0l], table[rect],
+            hashprime);
         goto end;
     } else if (base->tag == CONTAIN_B) {
         subblock s = base->content.b_c;
@@ -272,8 +282,8 @@ hash_rectangle(block *base, const mpz_t ix0, const mpz_t ix1, const mpz_t iy0,
         mpz_init_set_ui(y_adj, ymul);
         mpz_neg(tmp, y0);
         mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
-        xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
-        hash = (hash_t) ((xy_adj * (uint64_t) hash) % hashprime);
+        xy_adj = mulmod(mpz_get_ui(x_adj), mpz_get_ui(y_adj), hashprime);
+        hash = mulmod(xy_adj, hash, hashprime);
 
         mpz_clears(superx0, superx1, supery0, supery1, NULL);
         goto end;
@@ -310,8 +320,8 @@ end:
         mpz_init_set_ui(y_adj, ymul);
         mpz_neg(tmp, y0);
         mpz_powm(y_adj, y_adj, tmp, hashprime_mpz);
-        xy_adj = mpz_get_ui(x_adj) * mpz_get_ui(y_adj) % hashprime;
-        hash = (hash_t) ((xy_adj * (uint64_t) hash) % hashprime);
+        xy_adj = mulmod(mpz_get_ui(x_adj), mpz_get_ui(y_adj), hashprime);
+        hash = mulmod(xy_adj, hash, hashprime);
         mpz_clears(x_adj, y_adj, NULL);
     }
     mpz_clears(tmp, blocksize, zero, x0, x1, y0, y1, NULL);
@@ -1697,6 +1707,24 @@ initialize() {
     return (init_hashtable() || init_hash_cache() || init_result());
 }
 
+void
+show_point_hash_cache() {
+    int i;
+    printf("Point hash cache:\n");
+    for (i=0; i<LEAFSIZE*LEAFSIZE; i++) {
+        printf("%d: %llu\n", i, point_hash_value[i]);
+    }
+}
+
+void
+show_leaf_hash_cache() {
+    int i;
+    printf("Leaf hash cache:\n");
+    for (i=0; i<1<<(LEAFSIZE*LEAFSIZE); i++) {
+        printf("%x: %llu\n", i, (unsigned long long) leaf_hash_cache[i]);
+    }
+}
+
 int
 main(int argc, char** argv) {
     init_hashtable();
@@ -1715,18 +1743,24 @@ main(int argc, char** argv) {
         fprintf(stderr, "Error opening file\n");
         exit(1);
     }
-    b = read_mc(f);
+    //b = read_mc(f);
+    b = read_life_105(f);
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
-    } else if (b->depth == 0) {
-        fprintf(stderr, "Input pattern must be larger than leaf\n");
-        exit(1);
     }
     close(f);
+    assert(sizeof(unsigned long long) == sizeof(hash_t));
+    show_point_hash_cache();
+    show_leaf_hash_cache();
+    printf("hash: %llu\n", (unsigned long long) b->hash);
+    printf("mulmod test: %llu\n", (unsigned long long) mulmod((hash_t)1<<35,
+        (hash_t)1<<35, hashprime));
 
     f = fopen(argv[2], "w");
-    display(evolve(b), f);
+    if (b->depth > 0) {
+        display(evolve(b), f);
+    }
     close(f);
 }
 
