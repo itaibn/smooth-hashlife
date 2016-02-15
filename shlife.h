@@ -115,11 +115,11 @@ struct inner_pattern {
 // cause collisions. It would be good to have that both xmul and ymul are
 // primitive roots but this hasn't been checked.
 
-// Note: hashprime must be less than 2^31 for code to work. See comment in
+// Note: hashprime must be less than 2^62 for code to work. See comment in
 // hash_node().
 
 //const unsigned long hashprime = 1000000007;
-const hash_t hashprime = 1000000007;
+const hash_t hashprime = 1000000000000007;
 mpz_t hashprime_mpz;
 //const unsigned long xmul = 2331, ymul = 121212121;
 const hash_t xmul = 2331, ymul = 121212121;

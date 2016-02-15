@@ -1124,7 +1124,7 @@ evolve(block *x) {
         r = mkblock_node(NW(n), NE(n), SW(n), SE(n));
     }
     end:
-    if (x->depth > 4) {
+    if (x->depth > 9) {
         TRACE("evolve %d %d %d %d\n", x->depth, nevolve, cache, success);
     }
     return (x->res = r);
@@ -1743,8 +1743,8 @@ main(int argc, char** argv) {
         fprintf(stderr, "Error opening file\n");
         exit(1);
     }
-    //b = read_mc(f);
-    b = read_life_105(f);
+    b = read_mc(f);
+    //b = read_life_105(f);
     if (b == NULL) {
         fprintf(stderr, "Badly formatted input\n");
         exit(1);
