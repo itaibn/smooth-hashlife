@@ -1,5 +1,10 @@
 \documentclass{article}
 
+\usepackage{amsthm}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}
+
 \begin{document}
 
 \title{Smooth Hashlife: An improvement of the Hashlife algorithm to detect
@@ -11,5 +16,46 @@ non-power-of-two displacements}
 
 In this article I describe an algorithm and implemention of that algorithm to
 simulate cellular automata
+
+\section{Cellular automata}
+
+\section{Description of Hashlife}
+
+\section{Focal Points}
+
+TODO Motivation
+
+\begin{definition}
+Fix two increasing sequences $(a_n), (b_n)$ of positive integers. Given a cell
+configuration, we define the \emph{$n$-focal points} by induction on $n$:
+
+TODO Define/clarify cell configuration, square, center of square, hash
+
+\begin{itemize}
+\item Any point on the grid is a $0$-focal point.
+\item An $n$-focal point is an $(n-1)$-focal point $(x, y)$, with the property
+that the $a_n \times a_n$ rectangle centered at $(x, y)$ has a larger hash value
+than any $a_n \times a_n$ rectangle centered at $(x', y')$ where $(x', y')$ is
+$(n-1)$-focal and $|x - x'|, |y - y'| \leq b_n$.
+\end{itemize}
+\end{definition}
+
+The $n$-focal points have the following properties:
+
+\begin{itemize}
+\item Translation invariance: Translating a cell configuration by $(a, b)$
+translates all the $n$-focal points by $(a, b)$.
+
+\item Locality: It is possible to tell whether a point $(x, y)$ is $n$-focal
+given only the knowledge of the states of the cells in the diameter $a_n + 2
+b_n$ square around $(x, y)$.
+
+\item Sparsity: Any $b_n \times b_n$ square contains at most one $n$-focal cell.
+
+\item Efficient computation: Assuming $(a_n)$ $(b_n)$ grow exponentially with
+the same constant, the time it takes to calculate all the $i$-focal points in an
+$n \times n$ square is $O (i n^2)$. Typically we're interested in $i \sim \log
+n$ leading to an asymptotic cost of $O (n^2 \log n)$.
+\end{itemize}
 
 \end{document}
