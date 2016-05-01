@@ -1,5 +1,6 @@
 \documentclass{article}
 
+\usepackage{amsfonts}
 \usepackage{amsthm}
 
 \theoremstyle{definition}
@@ -12,6 +13,8 @@ non-power-of-two displacements}
 \author{Itai Bar-Natan}
 \maketitle
 
+\tableofcontents
+
 \section{Introduction}
 
 In this article I describe an algorithm and implemention of that algorithm to
@@ -22,7 +25,29 @@ simulate cellular automata
 A cellular automaton is a set of rules describing a grid of cells, where each
 cell is in one of a finite set of states, and how the state each cell changes
 over time as a function of the states of the nearby cells. We can describe this
-more precisely as follows: 
+more precisely as follows: A cellular automaton has a set $S$ (typically finite)
+of states. A \emph {cell configuration} for this set of states is a function
+$\alpha : \mathbb {Z}^2 \to S$ which describes the state at each point on the
+two-dimensional square lattice. Given a cell configuration $\alpha$, as well as
+integers $m_0 \leq m_1$ and $n_0 \leq n_1$, we can consider a \emph {rectangle}
+in $\alpha$ to be the restriction of $\alpha$ to $([m_0, m_1] \times [n_0, n_1])
+\cap \mathbb {Z}^2$, thought of as an $(m_1-m_0+1) \times (n_1-n_0+1)$ matrix
+with entries in $S$. We will abuse notation slightly and write this matrix as
+$\alpha |_{[m_0, m_1] \times [n_0, n_1]}$; in particular, with this notation it
+is possible that $\alpha _{[m, m+k] \times [n, n+\ell]} = \beta _{[m', m'+k]
+\times [n', n'+\ell]}$ even when $(m, n) \neq (m', n')$, unlike with ordinary
+restriction. Finally, a \emph {cellular automaton} consists of the set of states
+$S$ as well as a \emph {transition function} $t : M _{2k+1, 2k+1} (S) \to S$ for
+some natural number $k$ (equal to $1$ in the most notable cellular automata).
+Given a cellular automaton $(S, t)$ and a cellular configuration $\alpha$, we
+can define the \emph {evolution of $\alpha$} as sequence of cell configurations
+$(\alpha_n) _{n \geq 0}$ defined inductively by $\alpha_0 = \alpha$ and
+
+$$ \alpha _{n+1} (i, j) = t (\alpha_n |_{[i-k, i+k] \times [j-k, j+k]}) $$
+
+\section{Applications of Cellular Automata}
+
+They're pretty.
 
 \section{Description of Hashlife}
 
