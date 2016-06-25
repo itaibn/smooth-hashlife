@@ -37,13 +37,20 @@ $\alpha |_{[m_0, m_1] \times [n_0, n_1]}$; in particular, with this notation it
 is possible that $\alpha _{[m, m+k] \times [n, n+\ell]} = \beta _{[m', m'+k]
 \times [n', n'+\ell]}$ even when $(m, n) \neq (m', n')$, unlike with ordinary
 restriction. Finally, a \emph {cellular automaton} consists of the set of states
-$S$ as well as a \emph {transition function} $t : M _{2k+1, 2k+1} (S) \to S$ for
-some natural number $k$ (equal to $1$ in the most notable cellular automata).
-Given a cellular automaton $(S, t)$ and a cellular configuration $\alpha$, we
-can define the \emph {evolution of $\alpha$} as sequence of cell configurations
-$(\alpha_n) _{n \geq 0}$ defined inductively by $\alpha_0 = \alpha$ and
+$S$ as well as a \emph {transition function} $t : M _{3, 3} (S) \to S$.  Given a
+cellular automaton $(S, t)$ and a cellular configuration $\alpha$, we can define
+the \emph {evolution of $\alpha$} as sequence of cell configurations $(\alpha_n)
+_{n \geq 0}$ defined inductively by $\alpha_0 = \alpha$ and
 
-$$ \alpha _{n+1} (i, j) = t (\alpha_n |_{[i-k, i+k] \times [j-k, j+k]}) $$
+$$ \alpha _{n+1} (i, j) = t (\alpha_n |_{[i-1, i+1] \times [j-1, j+1]}) $$
+
+The definition above can be generalized in many ways. For instance, we can
+consider cellular automata in dimensions other than two, have the state of a
+cell be affected by a different set of neighbors rather than the Moore
+neighborhood, or use a lattice other than the square lattice. One modification
+that will seem abstruse but turn out useful  can consider cellular automata in
+dimensions other than two, use a notion of proximity other than the Moore
+neighborhood is to have a lattice for \emph {spacetime} that does not decompose 
 
 \section{Applications of Cellular Automata}
 
