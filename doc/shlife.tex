@@ -50,8 +50,11 @@ cell be affected by a different set of neighbors rather than the Moore
 neighborhood, or use a lattice other than the square lattice. One modification
 that will seem abstruse but turn out useful is to have a lattice for \emph
 {spacetime} that does not decompose as a spatial lattice and an integer time.
-Specifically, we can consider the lattice $L = \{(x, y, t) \in \mathbb {Z}^3} |
-x + y + t \in 2 \mathbb {Z}\}$. 
+
+Specifically, can consider the lattice $L = \{(x, y, t) \in \mathbb {Z}^3} | x +
+y + t \in 2 \mathbb {Z}\}$. In this lattice, we can consider cellular automata
+where the state in cell $(x, y, t)$ depends on the states in the four cells $(x
+\pm 1, y \pm 1, t-1)$.
 
 \section{Applications of Cellular Automata}
 
